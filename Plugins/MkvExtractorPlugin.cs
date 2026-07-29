@@ -19,7 +19,7 @@ public sealed partial class MkvExtractorPlugin(string toolPath) : IExtractorPlug
     public async Task<MediaFileInfo> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
         var runner = new ProcessRunner(toolPath);
-        var (_, stdout, _) = await runner.RunAsync("mkvmerge.exe", $"\"{filePath}\" -i -F json", ct);
+        var (_, stdout, _) = await runner.RunAsync("mkvmerge.exe", new[] { filePath, "-i", "-F", "json" }, ct);
         var raw = JsonSerializer.Deserialize<MkvJsonRoot>(stdout)
             ?? throw new InvalidOperationException("Failed to parse mkvmerge JSON.");
 
@@ -61,36 +61,54 @@ public sealed partial class MkvExtractorPlugin(string toolPath) : IExtractorPlug
         return new ExtractionProgress("", "", pct, $"Extracting... {pct}%", false);
     }
 
-    private static string BuildCommand(ExtractRequest req)
+    private static IEnumerable<string> BuildCommand(ExtractRequest req)
     {
-        var sb = new StringBuilder();
+        var args = new List<string>();
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
-        sb.Append('\"').Append(req.Source.FilePath).Append("\" ");
+        args.Add(req.Source.FilePath);
 
         if (req.SelectedTrackIds.Count > 0)
         {
-            sb.Append("tracks ");
+            args.Add("tracks");
             foreach (var tid in req.SelectedTrackIds)
             {
                 var t = req.Source.Tracks.Find(x => x.Id == tid)!;
                 var ext = MkvCodecExtensions.GetExtension(t.Properties.GetValueOrDefault("CodecId", ""));
-                sb.Append('\"').Append(tid).Append(':').Append(req.OutputDirectory).Append('\\')
-                  .Append(fn).Append("_Track").Append(tid + 1).Append('.').Append(ext).Append("\" ");
+                args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}.{ext}");
             }
         }
         if (req.SelectedChapterIds.Count > 0)
-            sb.Append("chapters \"").Append(req.OutputDirectory).Append('\\').Append(fn).Append("_chapters.xml\" ");
-        if (req.ExtractAttachments) { sb.Append("attachments ");
+        {
+            args.Add("chapters");
+            args.Add($"{req.OutputDirectory}\\{fn}_chapters.xml");
+        }
+        if (req.ExtractAttachments)
+        {
+            args.Add("attachments");
             foreach (var a in req.Source.Attachments)
-                sb.Append('\"').Append(a.Id).Append(':').Append(req.OutputDirectory).Append('\\').Append(a.FileName).Append("\" "); }
+            {
+                args.Add($"{a.Id}:{req.OutputDirectory}\\{a.FileName}");
+            }
+        }
         if (req.ExtractTags)
-            sb.Append("tags \"").Append(req.OutputDirectory).Append('\\').Append(fn).Append("_tags.xml\" ");
+        {
+            args.Add("tags");
+            args.Add($"{req.OutputDirectory}\\{fn}_tags.xml");
+        }
         if (req.ExtractCueSheets)
-            sb.Append("cuesheet \"").Append(req.OutputDirectory).Append('\\').Append(fn).Append("_cuesheet.cue\" ");
-        if (req.ExtractTimestamps) { sb.Append("timestamps_v2 ");
+        {
+            args.Add("cuesheet");
+            args.Add($"{req.OutputDirectory}\\{fn}_cuesheet.cue");
+        }
+        if (req.ExtractTimestamps)
+        {
+            args.Add("timestamps_v2");
             foreach (var tid in req.SelectedTrackIds)
-                sb.Append('\"').Append(tid).Append(':').Append(req.OutputDirectory).Append('\\').Append(fn).Append("_Track").Append(tid + 1).Append("_timestamps.txt\" "); }
-        return sb.ToString();
+            {
+                args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}_timestamps.txt");
+            }
+        }
+        return args;
     }
 
     private static string FormatDuration(long ns) => ns == 0 ? "" : TimeSpan.FromMilliseconds(ns / 1_000_000L).ToString(@"hh\:mm\:ss\.fff");

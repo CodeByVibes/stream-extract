@@ -10,6 +10,13 @@ public sealed class UpdateChecker
 {
     private const string GitHubRepo = "OWNER/REPO"; // TODO: set to your GitHub org/repo
 
+    private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+
+    static UpdateChecker()
+    {
+        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("StreamExtract-UpdateChecker");
+    }
+
     private readonly string _updateUrl;
     private readonly Func<JsonDocument?, (string version, string url)> _parser;
 
@@ -38,10 +45,7 @@ public sealed class UpdateChecker
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("StreamExtract-UpdateChecker");
-
-            var response = await http.GetStringAsync(_updateUrl, ct);
+            var response = await _httpClient.GetStringAsync(_updateUrl, ct);
             var json = JsonDocument.Parse(response);
             var (remoteVersionStr, downloadUrl) = _parser(json);
 

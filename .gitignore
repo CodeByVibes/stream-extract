@@ -79,3 +79,6 @@ publish/
 ## Media files
 *.mp4
 *.mkv
+
+## Folders
+/Report/

@@ -221,8 +221,6 @@ public partial class Form1 : Form
     {
         if (string.IsNullOrWhiteSpace(txtBrowseOutputDirectory.Text))
         { MessageBox.Show("You must set an output folder!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        if (!Directory.Exists(txtBrowseOutputDirectory.Text))
-        { MessageBox.Show("Output folder does not exist!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
         if (_filePaths.Count == 0) return;
 
         rtbDebug.Clear();
@@ -245,6 +243,12 @@ public partial class Form1 : Form
             var filePath = _filePaths.Count > i ? _filePaths[i] : info.FilePath;
             var fn = Path.GetFileNameWithoutExtension(filePath);
             var outputDir = txtBrowseOutputDirectory.Invoke(() => txtBrowseOutputDirectory.Text);
+
+            if (!Directory.Exists(outputDir))
+            {
+                try { Directory.CreateDirectory(outputDir); }
+                catch (Exception ex) { DebugLog($"Failed to create directory: {ex.Message}"); continue; }
+            }
 
             var req = BuildExtractRequest(info, fileNode, filePath, outputDir!);
             if (req is null) continue;
@@ -341,8 +345,22 @@ public partial class Form1 : Form
 
     private void BtnNewVersion_Click(object? sender, EventArgs e)
     {
-        try { Process.Start(new ProcessStartInfo(_updateDownloadUrl ?? "https://cudacoder.com") { UseShellExecute = true }); }
-        catch { }
+        try
+        {
+            var url = _updateDownloadUrl ?? "https://cudacoder.com";
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            else
+            {
+                MessageBox.Show("Invalid or insecure update URL.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"Failed to open update URL: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
     }
 
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)

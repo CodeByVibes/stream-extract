@@ -28,16 +28,21 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
     public async Task<MediaFileInfo> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
         var runner = new ProcessRunner(toolPath);
-        var (_, stdout, stderr) = await runner.RunAsync("mp4box.exe", $"-info \"{filePath}\"", ct);
+        var (_, stdout, stderr) = await runner.RunAsync("mp4box.exe", new[] { "-info", filePath }, ct);
         var output = stdout + stderr;
-        var lines = output.Split('\n');
-
+        
         var tracks = new List<TrackInfo>();
-
-        for (int i = 0; i < lines.Length; i++)
+        using var reader = new StringReader(output);
+        
+        string? currentLine = await reader.ReadLineAsync();
+        while (currentLine != null)
         {
-            var trackMatch = TrackRe().Match(lines[i]);
-            if (!trackMatch.Success) continue;
+            var trackMatch = TrackRe().Match(currentLine);
+            if (!trackMatch.Success)
+            {
+                currentLine = await reader.ReadLineAsync();
+                continue;
+            }
 
             var trackId = int.Parse(trackMatch.Groups[2].Value);
 
@@ -45,12 +50,17 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
             var mediaType = "";
             var props = new Dictionary<string, string>();
 
-            for (int j = i + 1; j < Math.Min(i + 20, lines.Length); j++)
+            int linesRead = 0;
+            currentLine = await reader.ReadLineAsync();
+            while (currentLine != null && linesRead < 20)
             {
-                var line = lines[j];
+                linesRead++;
+
+                // Stop at next track header
+                if (TrackRe().IsMatch(currentLine)) break;
 
                 // Media Type: vide:avc1
-                var mt = MediaTypeRe().Match(line);
+                var mt = MediaTypeRe().Match(currentLine);
                 if (mt.Success)
                 {
                     mediaType = mt.Groups[1].Value.ToLowerInvariant();
@@ -58,20 +68,19 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
                 }
 
                 // width=640 height=480
-                var dims = DimsRe().Match(line);
+                var dims = DimsRe().Match(currentLine);
                 if (dims.Success && string.IsNullOrEmpty(props.GetValueOrDefault("PixelDimensions")))
                     props["PixelDimensions"] = $"{dims.Groups[1].Value}x{dims.Groups[2].Value}";
 
                 // 2 Channel(s)
-                var ch = ChannelsRe().Match(line);
+                var ch = ChannelsRe().Match(currentLine);
                 if (ch.Success) props["Channels"] = ch.Groups[1].Value;
 
                 // SampleRate 48000
-                var sr = SampleRateRe().Match(line);
+                var sr = SampleRateRe().Match(currentLine);
                 if (sr.Success) props["SampleRate"] = sr.Groups[1].Value;
 
-                // Stop at next track header
-                if (j > i + 1 && TrackRe().IsMatch(line)) break;
+                currentLine = await reader.ReadLineAsync();
             }
 
             if (codec != "unknown") props["CodecId"] = codec;
@@ -100,24 +109,37 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
         var runner = new ProcessRunner(toolPath);
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
         var total = req.SelectedTrackIds.Count + (req.SelectedChapterIds.Count > 0 ? 1 : 0);
-        var done = 0;
+        int done = 0;
+
+        var tasks = new List<Task>();
 
         foreach (var tid in req.SelectedTrackIds)
         {
-            ct.ThrowIfCancellationRequested();
-            progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {tid}",
-                total > 0 ? done * 100 / total : 0, $"Extracting track {tid}...", false));
-            await runner.RunAsync("mp4box.exe", $"-raw {tid} \"{req.Source.FilePath}\"", ct, req.OutputDirectory);
-            done++;
+            var trackId = tid; // capture variable
+            tasks.Add(Task.Run(async () =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var currentDone = Interlocked.Increment(ref done);
+                progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {trackId}",
+                    total > 0 ? currentDone * 100 / total : 0, $"Extracting track {trackId}...", false));
+                await runner.RunAsync("mp4box.exe", new[] { "-raw", trackId.ToString(), req.Source.FilePath }, ct, req.OutputDirectory);
+            }, ct));
         }
 
         if (req.SelectedChapterIds.Count > 0)
         {
-            progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
-                total > 0 ? done * 100 / total : 0, "Extracting chapters...", false));
-            var chapFile = $"{req.OutputDirectory}\\{fn}_chapters.xml";
-            await runner.RunAsync("mp4box.exe", $"-dump-chap \"{req.Source.FilePath}\" -out \"{chapFile}\"", ct);
+            tasks.Add(Task.Run(async () =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var currentDone = Interlocked.Increment(ref done);
+                progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
+                    total > 0 ? currentDone * 100 / total : 0, "Extracting chapters...", false));
+                var chapFile = $"{req.OutputDirectory}\\{fn}_chapters.xml";
+                await runner.RunAsync("mp4box.exe", new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
+            }, ct));
         }
+
+        await Task.WhenAll(tasks);
 
         progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
     }
