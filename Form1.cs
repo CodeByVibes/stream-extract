@@ -258,7 +258,7 @@ public partial class Form1 : Form
             {
                 var progress = new Progress<ExtractionProgress>(p =>
                 {
-                    Invoke(() => { pbProgress.Value = p.Percentage; DebugLog(p.StatusText); });
+                    Invoke(() => { pbProgress.Value = p.Percentage; if (!p.IsComplete) DebugLogProgress(p.StatusText); });
                 });
                 var plugin = _pluginRegistry.GetPlugin(filePath)!;
                 plugin.ExtractAsync(req, progress, ct).GetAwaiter().GetResult();
@@ -270,7 +270,7 @@ public partial class Form1 : Form
         if (!ct.IsCancellationRequested)
         {
             Invoke(() => { btnExtract.Enabled = true; pbProgress.Value = 0; });
-            DebugLog("Done!");
+            DebugLog("\r\nDone!");
         }
     }
 
@@ -327,6 +327,30 @@ public partial class Form1 : Form
         _debugText = text + Environment.NewLine;
         if (InvokeRequired) { BeginInvoke(AddDebugText); return; }
         rtbDebug.AppendText(text + Environment.NewLine);
+        rtbDebug.ScrollToCaret();
+    }
+
+    private void DebugLogProgress(string text)
+    {
+        if (_isClosing) return;
+        if (InvokeRequired) { BeginInvoke(() => DebugLogProgress(text)); return; }
+
+        var fullText = rtbDebug.Text;
+        if (fullText.Length < 2) { DebugLog(text); return; }
+
+        var lastNewline = fullText.LastIndexOf('\n', fullText.Length - 2);
+        var lastLine = lastNewline >= 0 ? fullText[(lastNewline + 1)..] : fullText;
+        if (lastLine.StartsWith("Extracting"))
+        {
+            var start = lastNewline >= 0 ? lastNewline + 1 : 0;
+            rtbDebug.Select(start, lastLine.Length);
+            rtbDebug.SelectedText = text;
+        }
+        else
+        {
+            rtbDebug.AppendText(text + Environment.NewLine);
+        }
+        rtbDebug.SelectionStart = rtbDebug.TextLength;
         rtbDebug.ScrollToCaret();
     }
 
