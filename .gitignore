@@ -21,7 +21,6 @@ bld/
 
 ## Build artifacts
 *.dll
-*.exe
 *.pdb
 *.ilk
 *.obj
