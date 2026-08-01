@@ -79,3 +79,5 @@ publish/
 ## Media files
 *.mp4
 *.mkv
+
+.kilo/
