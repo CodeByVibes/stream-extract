@@ -1,21 +1,21 @@
 using StreamExtract.Models;
 using StreamExtract.Plugins;
 using StreamExtract.Services;
-using System.Diagnostics;
 using System.Reflection;
-using System.Text.RegularExpressions;
 
 namespace StreamExtract;
 
 public partial class Form1 : Form
 {
+    private enum SelectionKind { Attachments, Chapters, Tags, CueSheet, CuesForSelectedTracks, Timestamps }
+
     private bool _isClosing;
     private readonly PluginRegistry _pluginRegistry = new();
-    private readonly List<MediaFileInfo> _fileInfos = [];
-    private List<string> _filePaths = [];
-    private MediaFileInfo? _currentFileInfo;
-    private CancellationTokenSource? _cts;
-    private string _debugText = "";
+    private List<string> _pendingPaths = [];
+    private readonly List<ImportedFile> _importedFiles = [];
+    private readonly CancellationTokenSource _lifetimeCts = new();
+    private CancellationTokenSource? _perOpCts;
+    private Task? _activeOperation;
     private string? _updateDownloadUrl;
 
     private TreeView tvFiles = null!;
@@ -64,9 +64,14 @@ public partial class Form1 : Form
 
     private static Image LoadPng(string name)
     {
-        using var s = Assembly.GetExecutingAssembly()
-            .GetManifestResourceStream($"StreamExtract.Resources.{name}.png")!;
-        return Image.FromStream(s);
+        var stream = Assembly.GetExecutingAssembly()
+            .GetManifestResourceStream($"StreamExtract.Resources.{name}.png")
+            ?? throw new InvalidOperationException($"Embedded resource 'StreamExtract.Resources.{name}.png' is missing.");
+        using (stream)
+        using (var img = Image.FromStream(stream))
+        {
+            return new Bitmap(img);
+        }
     }
 
     private void SetupPlugins()
@@ -113,13 +118,13 @@ public partial class Form1 : Form
     private void TvFiles_DragEnter(object? sender, DragEventArgs e)
         => e.Effect = e.Data!.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.All : DragDropEffects.None;
 
-    private void TvFiles_DragDrop(object? sender, DragEventArgs e)
+    private async void TvFiles_DragDrop(object? sender, DragEventArgs e)
     {
-        _filePaths = ((string[])e.Data!.GetData(DataFormats.FileDrop)!).ToList();
-        StartImport();
+        _pendingPaths = ((string[])e.Data!.GetData(DataFormats.FileDrop)!).ToList();
+        await RunExclusiveAsync(StartImportAsync);
     }
 
-    private void BtnOpenFiles_Click(object? sender, EventArgs e)
+    private async void BtnOpenFiles_Click(object? sender, EventArgs e)
     {
         using var dlg = new OpenFileDialog
         {
@@ -127,52 +132,44 @@ public partial class Form1 : Form
             Multiselect = true
         };
         if (dlg.ShowDialog() != DialogResult.OK) return;
-        _filePaths = dlg.FileNames.ToList();
-        StartImport();
+        _pendingPaths = dlg.FileNames.ToList();
+        await RunExclusiveAsync(StartImportAsync);
     }
 
-    private void StartImport()
+    private async Task StartImportAsync(CancellationToken ct)
     {
         tvFiles.Nodes.Clear();
-        _fileInfos.Clear();
-        _currentFileInfo = null;
+        _importedFiles.Clear();
+        btnExtract.Enabled = false;
 
-        if (_filePaths.Count > 0 && cbUseSourceDirectory.Checked)
-            txtBrowseOutputDirectory.Text = Path.GetDirectoryName(Path.GetFullPath(_filePaths[0])) ?? "";
+        if (_pendingPaths.Count > 0 && cbUseSourceDirectory.Checked)
+            txtBrowseOutputDirectory.Text = Path.GetDirectoryName(Path.GetFullPath(_pendingPaths[0])) ?? "";
 
-        _cts?.Cancel();
-        _cts = new CancellationTokenSource();
-        var ct = _cts.Token;
-
-        new Thread(() =>
+        foreach (var fp in _pendingPaths)
         {
-            foreach (var fp in _filePaths)
+            if (_isClosing || ct.IsCancellationRequested) break;
+            try
             {
-                if (_isClosing || ct.IsCancellationRequested) break;
-                try
-                {
-                    var plugin = _pluginRegistry.GetPlugin(fp);
-                    if (plugin is null) continue;
-                    var info = plugin.AnalyzeFileAsync(fp, ct).GetAwaiter().GetResult();
-                    _fileInfos.Add(info);
-                    _currentFileInfo = info;
-                    AddFileToTree();
-                }
-                catch (OperationCanceledException) { break; }
-                catch (Exception ex) { DebugLog($"Error importing {Path.GetFileName(fp)}: {ex.Message}"); }
+                var plugin = _pluginRegistry.GetPlugin(fp);
+                if (plugin is null) continue;
+                var info = await plugin.AnalyzeFileAsync(fp, ct);
+                var imported = new ImportedFile(fp, plugin, info);
+                _importedFiles.Add(imported);
+                BeginInvoke(() => AddFileToTree(imported));
             }
-            if (!_isClosing && !ct.IsCancellationRequested && tvFiles.Nodes.Count > 0)
-                Invoke(() => btnExtract.Enabled = true);
-        }).Start();
+            catch (OperationCanceledException) { break; }
+            catch (Exception ex) { DebugLog($"Error importing {Path.GetFileName(fp)}: {ex.Message}"); }
+        }
+
+        btnExtract.Enabled = _importedFiles.Count > 0;
     }
 
-    private void AddFileToTree()
+    private void AddFileToTree(ImportedFile imported)
     {
-        if (InvokeRequired) { BeginInvoke(AddFileToTree); return; }
-        if (_isClosing || _currentFileInfo is null) return;
+        if (_isClosing || IsDisposed) return;
 
-        var info = _currentFileInfo;
-        var root = new TreeNode(Path.GetFileName(info.FilePath), 1, 1);
+        var info = imported.Info;
+        var root = new TreeNode(Path.GetFileName(info.FilePath), 1, 1) { Tag = imported };
 
         foreach (var t in info.Tracks)
         {
@@ -182,26 +179,25 @@ public partial class Form1 : Form
             if (t.Properties.TryGetValue("Duration", out var dur) && dur.Length > 0)
                 label += $"[{dur}]";
             int img = t.Type switch { TrackType.Video => 2, TrackType.Audio => 3, TrackType.Subtitle => 4, _ => 0 };
-            root.Nodes.Add(new TreeNode(label, img, img));
+            root.Nodes.Add(new TreeNode(label, img, img) { Tag = (int)t.Id });
         }
 
         if (info.Attachments.Count > 0)
-            root.Nodes.Add(new TreeNode($"Attachments: {info.Attachments.Count}", 6, 6));
+            root.Nodes.Add(new TreeNode($"Attachments: {info.Attachments.Count}", 6, 6) { Tag = SelectionKind.Attachments });
         if (info.Chapters.Count > 0)
-            root.Nodes.Add(new TreeNode($"Chapters: {info.Chapters[0].Name}", 5, 5));
+            root.Nodes.Add(new TreeNode($"Chapters: {info.Chapters[0].Name}", 5, 5) { Tag = SelectionKind.Chapters });
         if ((info.Features & ExtractorFeatures.Tags) != 0)
-            root.Nodes.Add(new TreeNode("Tags", 7, 7));
+            root.Nodes.Add(new TreeNode("Tags", 7, 7) { Tag = SelectionKind.Tags });
         if ((info.Features & ExtractorFeatures.CueSheets) != 0)
         {
-            root.Nodes.Add(new TreeNode("CUE sheet", 9, 9));
-            root.Nodes.Add(new TreeNode("Cues for selected tracks", 9, 9));
+            root.Nodes.Add(new TreeNode("CUE sheet", 9, 9) { Tag = SelectionKind.CueSheet });
+            root.Nodes.Add(new TreeNode("Cues for selected tracks", 9, 9) { Tag = SelectionKind.CuesForSelectedTracks });
         }
         if ((info.Features & ExtractorFeatures.Timestamps) != 0)
-            root.Nodes.Add(new TreeNode("Timestamps for selected tracks", 8, 8));
+            root.Nodes.Add(new TreeNode("Timestamps for selected tracks", 8, 8) { Tag = SelectionKind.Timestamps });
 
         root.ExpandAll();
         tvFiles.Nodes.Add(root);
-        btnExtract.Enabled = true;
     }
 
     private void CbUseSourceDirectory_CheckedChanged(object? sender, EventArgs e)
@@ -217,64 +213,74 @@ public partial class Form1 : Form
             txtBrowseOutputDirectory.Text = dlg.SelectedPath;
     }
 
-    private void BtnExtract_Click(object? sender, EventArgs e)
+    private async void BtnExtract_Click(object? sender, EventArgs e)
     {
         if (string.IsNullOrWhiteSpace(txtBrowseOutputDirectory.Text))
         { MessageBox.Show("You must set an output folder!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        if (_filePaths.Count == 0) return;
+        if (_importedFiles.Count == 0) return;
 
         rtbDebug.Clear();
         btnExtract.Enabled = false;
-        _cts?.Cancel();
-        _cts = new CancellationTokenSource();
-        var ct = _cts.Token;
-        new Thread(() => ExportFiles(ct)).Start();
+        await RunExclusiveAsync(ExportFilesAsync);
     }
 
-    private void ExportFiles(CancellationToken ct)
+    private async Task ExportFilesAsync(CancellationToken ct)
     {
-        for (int i = 0; i < tvFiles.Nodes.Count && i < _fileInfos.Count; i++)
+        var requests = SnapshotExtractRequests();
+        if (requests.Count == 0)
         {
-            if (ct.IsCancellationRequested) break;
-            var fileNode = tvFiles.Nodes[i];
-            if (!AnyChildChecked(fileNode)) continue;
+            btnExtract.Enabled = true;
+            pbProgress.Value = 0;
+            DebugLog("Nothing to extract: no items selected or no valid output directory.");
+            return;
+        }
 
-            var info = _fileInfos[i];
-            var filePath = _filePaths.Count > i ? _filePaths[i] : info.FilePath;
-            var fn = Path.GetFileNameWithoutExtension(filePath);
-            var outputDir = txtBrowseOutputDirectory.Invoke(() => txtBrowseOutputDirectory.Text);
+        int succeeded = 0, failed = 0;
+        var total = requests.Count;
 
-            if (!Directory.Exists(outputDir))
+        foreach (var (imported, request) in requests)
+        {
+            if (_isClosing || ct.IsCancellationRequested) break;
+
+            if (!Directory.Exists(request.OutputDirectory))
             {
-                try { Directory.CreateDirectory(outputDir); }
-                catch (Exception ex) { DebugLog($"Failed to create directory: {ex.Message}"); continue; }
+                try { Directory.CreateDirectory(request.OutputDirectory); }
+                catch (Exception ex) { DebugLog($"Failed to create directory: {ex.Message}"); failed++; continue; }
             }
 
-            var req = BuildExtractRequest(info, fileNode, filePath, outputDir!);
-            if (req is null) continue;
-
-            DebugLog($"Starting: {info.FileName}");
+            DebugLog($"Starting: {imported.Info.FileName}");
             try
             {
-                var progress = new Progress<ExtractionProgress>(p =>
-                {
-                    Invoke(() => { pbProgress.Value = p.Percentage; if (!p.IsComplete) DebugLogProgress(p.StatusText); });
-                });
-                var plugin = _pluginRegistry.GetPlugin(filePath)!;
-                plugin.ExtractAsync(req, progress, ct).GetAwaiter().GetResult();
+                var progress = new Progress<ExtractionProgress>(UpdateProgressUi);
+                await imported.Plugin.ExtractAsync(request, progress, ct);
+                succeeded++;
             }
-            catch (OperationCanceledException) { DebugLog("Cancelled!"); break; }
-            catch (Exception ex) { DebugLog($"Error: {ex.Message}"); }
+            catch (OperationCanceledException)
+            {
+                DebugLog("Cancelled!");
+                break;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                DebugLog($"Error: {ex.Message}");
+            }
         }
 
-        if (!ct.IsCancellationRequested)
-        {
-            Invoke(() => { btnExtract.Enabled = true; pbProgress.Value = 0; });
-            DebugLog("\r\nDone!");
-        }
+        if (_isClosing) return;
+
+        btnExtract.Enabled = true;
+        pbProgress.Value = 0;
+
+        if (ct.IsCancellationRequested)
+            DebugLog("\r\nCancelled.");
+        else if (failed > 0)
+            DebugLog($"\r\nFailed: {failed} of {total} files extracted.");
+        else
+            DebugLog($"\r\nDone ({succeeded} of {total} files extracted)");
     }
 
-    private ExtractRequest? BuildExtractRequest(MediaFileInfo info, TreeNode fileNode, string fp, string outputDir)
+    private static FileSelection? BuildFileSelection(TreeNode fileNode)
     {
         var trackIds = new HashSet<int>();
         bool attachments = false, tags = false, cuesheet = false, timestamps = false;
@@ -283,29 +289,54 @@ public partial class Form1 : Form
         foreach (TreeNode child in fileNode.Nodes)
         {
             if (!child.Checked) continue;
-            var text = child.Text;
-
-            if (text.StartsWith("Track", StringComparison.OrdinalIgnoreCase))
+            switch (child.Tag)
             {
-                for (int i = 0; i < info.Tracks.Count; i++)
-                    if (fileNode.Nodes[i] == child) { trackIds.Add(info.Tracks[i].Id); break; }
+                case int trackId:
+                    trackIds.Add(trackId);
+                    break;
+                case SelectionKind.Attachments:
+                    attachments = true;
+                    break;
+                case SelectionKind.Chapters:
+                    chapterIds.Add(0);
+                    break;
+                case SelectionKind.Tags:
+                    tags = true;
+                    break;
+                case SelectionKind.CueSheet:
+                    cuesheet = true;
+                    break;
+                case SelectionKind.Timestamps:
+                    timestamps = true;
+                    break;
+                case SelectionKind.CuesForSelectedTracks:
+                    break;
             }
-            else if (text.StartsWith("Attachments", StringComparison.OrdinalIgnoreCase))
-                attachments = true;
-            else if (text.StartsWith("Chapters", StringComparison.OrdinalIgnoreCase))
-                chapterIds.Add(0);
-            else if (text == "Tags")
-                tags = true;
-            else if (text == "CUE sheet")
-                cuesheet = true;
-            else if (text.StartsWith("Timestamps", StringComparison.OrdinalIgnoreCase))
-                timestamps = true;
         }
 
         if (trackIds.Count == 0 && !attachments && chapterIds.Count == 0 && !tags && !cuesheet && !timestamps)
             return null;
 
-        return new ExtractRequest(info, outputDir, trackIds, chapterIds, attachments, tags, cuesheet, timestamps);
+        return new FileSelection(trackIds, attachments, chapterIds, tags, cuesheet, timestamps);
+    }
+
+    private List<(ImportedFile File, ExtractRequest Request)> SnapshotExtractRequests()
+    {
+        var outputDir = txtBrowseOutputDirectory.Text.Trim();
+        var result = new List<(ImportedFile, ExtractRequest)>();
+
+        foreach (TreeNode fileNode in tvFiles.Nodes)
+        {
+            if (!AnyChildChecked(fileNode)) continue;
+            if (fileNode.Tag is not ImportedFile imported) continue;
+            var selection = BuildFileSelection(fileNode);
+            if (selection is null) continue;
+            var request = ExtractionRequestBuilder.TryBuild(imported, outputDir, selection);
+            if (request is null) continue;
+            result.Add((imported, request));
+        }
+
+        return result;
     }
 
     private static bool AnyChildChecked(TreeNode n)
@@ -324,19 +355,24 @@ public partial class Form1 : Form
     private void DebugLog(string text)
     {
         if (_isClosing) return;
-        _debugText = text + Environment.NewLine;
-        if (InvokeRequired) { BeginInvoke(AddDebugText); return; }
+        if (InvokeRequired) { BeginInvoke(() => AppendDebug(text)); return; }
+        AppendDebug(text);
+    }
+
+    private void AppendDebug(string text)
+    {
+        if (_isClosing || IsDisposed) return;
         rtbDebug.AppendText(text + Environment.NewLine);
         rtbDebug.ScrollToCaret();
     }
 
     private void DebugLogProgress(string text)
     {
-        if (_isClosing) return;
+        if (_isClosing || IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(() => DebugLogProgress(text)); return; }
 
         var fullText = rtbDebug.Text;
-        if (fullText.Length < 2) { DebugLog(text); return; }
+        if (fullText.Length < 2) { AppendDebug(text); return; }
 
         var lastNewline = fullText.LastIndexOf('\n', fullText.Length - 2);
         var lastLine = lastNewline >= 0 ? fullText[(lastNewline + 1)..] : fullText;
@@ -354,11 +390,26 @@ public partial class Form1 : Form
         rtbDebug.ScrollToCaret();
     }
 
-    private void AddDebugText()
+    private void UpdateProgressUi(ExtractionProgress p)
     {
-        if (_isClosing) return;
-        rtbDebug.AppendText(_debugText);
-        rtbDebug.ScrollToCaret();
+        if (_isClosing || IsDisposed) return;
+        pbProgress.Value = p.Percentage;
+        if (!p.IsComplete) DebugLogProgress(p.StatusText);
+    }
+
+    private async Task RunExclusiveAsync(Func<CancellationToken, Task> op)
+    {
+        if (_activeOperation != null) return;
+        _perOpCts?.Cancel();
+        _perOpCts?.Dispose();
+        _perOpCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+        var ct = _perOpCts.Token;
+        try
+        {
+            _activeOperation = op(ct);
+            await _activeOperation;
+        }
+        finally { _activeOperation = null; }
     }
 
     private void BtnAbout_Click(object? sender, EventArgs e)
@@ -369,27 +420,20 @@ public partial class Form1 : Form
 
     private void BtnNewVersion_Click(object? sender, EventArgs e)
     {
-        try
-        {
-            var url = _updateDownloadUrl ?? "https://cudacoder.com";
-            if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps)
-            {
-                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-            }
-            else
-            {
-                MessageBox.Show("Invalid or insecure update URL.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
-        }
-        catch (Exception ex)
-        {
-            MessageBox.Show($"Failed to open update URL: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
+        var url = _updateDownloadUrl ?? "https://cudacoder.com";
+        if (!BrowserLauncher.TryOpen(url, out var error))
+            MessageBox.Show(error, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
     {
         _isClosing = true;
-        _cts?.Cancel();
+        _lifetimeCts.Cancel();
+    }
+
+    protected override void OnFormClosed(FormClosedEventArgs e)
+    {
+        _lifetimeCts.Dispose();
+        base.OnFormClosed(e);
     }
 }
