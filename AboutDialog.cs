@@ -1,5 +1,5 @@
-using System.Diagnostics;
 using System.Reflection;
+using StreamExtract.Services;
 
 namespace StreamExtract;
 
@@ -17,12 +17,15 @@ public sealed partial class AboutDialog : Form
         var versionString = $"{version!.Major}.{version.Minor}";
         lblAbout.Text = $"StreamExtract v{versionString}";
 
-        try
+        var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("StreamExtract.Resources.app_logo.png");
+        if (stream != null)
         {
-            using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("StreamExtract.Resources.app_logo.png");
-            if (stream != null) pbLogo.Image = Image.FromStream(stream);
+            using (stream)
+            using (var img = Image.FromStream(stream))
+            {
+                pbLogo.Image = new Bitmap(img);
+            }
         }
-        catch { }
     }
 
     private void PbLogo_Click(object? sender, EventArgs e) => OpenUrl(CudacoderUrl);
@@ -33,7 +36,7 @@ public sealed partial class AboutDialog : Form
 
     private static void OpenUrl(string url)
     {
-        try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
-        catch { }
+        if (!BrowserLauncher.TryOpen(url, out var error))
+            MessageBox.Show(error, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
     }
 }

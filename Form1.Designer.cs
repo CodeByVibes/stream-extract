@@ -1,10 +1,12 @@
 ﻿using System.ComponentModel;
 
+#nullable disable
+
 namespace StreamExtract;
 
 partial class Form1
 {
-    private IContainer? components;
+    private IContainer components = null!;
 
     protected override void Dispose(bool disposing)
     {

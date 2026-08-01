@@ -1,5 +1,11 @@
 namespace StreamExtract;
 
+public static class ProgressMath
+{
+    public static float Percent(int value, int min, int max)
+        => Math.Clamp((value - min) / Math.Max(1f, (float)max - min), 0f, 1f);
+}
+
 public class SmoothProgressBar : UserControl
 {
     private int _min;
@@ -15,32 +21,34 @@ public class SmoothProgressBar : UserControl
 
     protected override void OnResize(EventArgs e)
     {
+        base.OnResize(e);
         Invalidate();
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        Graphics g = e.Graphics;
         using SolidBrush brush = new(_barColor);
-        float percent = (_val - _min) / (float)(_max - _min);
+        float percent = ProgressMath.Percent(_val, _min, _max);
         Rectangle rect = ClientRectangle;
 
         rect.Width = (int)(rect.Width * percent);
 
-        g.FillRectangle(brush, rect);
+        e.Graphics.FillRectangle(brush, rect);
 
-        Draw3DBorder(g);
+        Draw3DBorder(e.Graphics);
 
         float textSize = Height * 0.30f;
-        decimal textPercent = (decimal)Value / Maximum * 100;
+        int textPercent = (int)(ProgressMath.Percent(Value, Minimum, Maximum) * 100);
 
-        StringFormat sf = new()
+        using StringFormat sf = new()
         {
             LineAlignment = StringAlignment.Center,
             Alignment = StringAlignment.Center
         };
+        using Font textFont = new(DefaultFont.Name, textSize);
+        using SolidBrush textBrush = new(_textColor);
 
-        g.DrawString((int)textPercent + "%", new Font(DefaultFont.Name, textSize), new SolidBrush(_textColor), ClientRectangle, sf);
+        e.Graphics.DrawString(textPercent + "%", textFont, textBrush, ClientRectangle, sf);
     }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -76,13 +84,9 @@ public class SmoothProgressBar : UserControl
         get => _val;
         set
         {
-            int oldValue = _val;
-
             if (value < _min) _val = _min;
             else if (value > _max) _val = _max;
             else _val = value;
-
-            _ = oldValue;
 
             Invalidate();
         }
