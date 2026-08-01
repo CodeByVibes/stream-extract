@@ -9,7 +9,10 @@ public sealed class PluginRegistry
     {
         _plugins.Add(plugin);
         foreach (var ext in plugin.SupportedExtensions)
-            _map[ext] = plugin;
+        {
+            if (!_map.TryAdd(ext, plugin))
+                throw new InvalidOperationException($"Extension '{ext}' is already registered by another plugin.");
+        }
     }
 
     public IExtractorPlugin? GetPlugin(string filePath)

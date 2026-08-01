@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
@@ -7,20 +6,21 @@ using StreamExtract.Services;
 
 namespace StreamExtract.Plugins;
 
-public sealed partial class MkvExtractorPlugin(string toolPath) : IExtractorPlugin
+public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? runner = null) : IExtractorPlugin
 {
+    private readonly IProcessRunner _runner = runner ?? new ProcessRunner(toolPath);
+
     private static readonly HashSet<string> _exts = new(StringComparer.OrdinalIgnoreCase) { ".mkv", ".mka" };
 
     public string Name => "MKV Extractor";
-    public HashSet<string> SupportedExtensions => _exts;
+    public IReadOnlySet<string> SupportedExtensions => _exts;
     public ExtractorFeatures SupportedFeatures => ExtractorFeatures.Tracks | ExtractorFeatures.Chapters |
         ExtractorFeatures.Attachments | ExtractorFeatures.Tags | ExtractorFeatures.CueSheets | ExtractorFeatures.Timestamps;
 
     public async Task<MediaFileInfo> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
-        var runner = new ProcessRunner(toolPath);
-        var (_, stdout, _) = await runner.RunAsync("mkvmerge.exe", new[] { filePath, "-i", "-F", "json" }, ct);
-        var raw = JsonSerializer.Deserialize<MkvJsonRoot>(stdout)
+        var result = await _runner.RunAsync("mkvmerge.exe", new[] { filePath, "-i", "-F", "json" }, ct);
+        var raw = JsonSerializer.Deserialize<MkvJsonRoot>(result.StandardOutput)
             ?? throw new InvalidOperationException("Failed to parse mkvmerge JSON.");
 
         var durNs = raw.Container?.Properties?.Duration ?? 0;
@@ -47,10 +47,35 @@ public sealed partial class MkvExtractorPlugin(string toolPath) : IExtractorPlug
 
     public async Task ExtractAsync(ExtractRequest req, IProgress<ExtractionProgress> progress, CancellationToken ct = default)
     {
-        var cmd = BuildCommand(req);
-        var runner = new ProcessRunner(toolPath);
-        await runner.RunWithProgressAsync("mkvextract.exe", cmd, ParseProgress, progress, ct);
+        if (req.SelectedTrackIds.Count > 0)
+        {
+            await RunModeAsync(req, BuildTracksCommand(req), progress, ct);
+        }
+        if (req.SelectedChapterIds.Count > 0)
+        {
+            await RunModeAsync(req, BuildChaptersCommand(req), progress, ct);
+        }
+        if (req.ExtractAttachments && req.Source.Attachments.Count > 0)
+        {
+            await RunModeAsync(req, BuildAttachmentsCommand(req), progress, ct);
+        }
+        if (req.ExtractTags)
+        {
+            await RunModeAsync(req, BuildTagsCommand(req), progress, ct);
+        }
+        if (req.ExtractCueSheets)
+        {
+            await RunModeAsync(req, BuildCueSheetsCommand(req), progress, ct);
+        }
+        if (req.ExtractTimestamps && req.SelectedTrackIds.Count > 0)
+        {
+            await RunModeAsync(req, BuildTimestampsCommand(req), progress, ct);
+        }
     }
+
+    private Task RunModeAsync(ExtractRequest req, IEnumerable<string> args,
+        IProgress<ExtractionProgress> progress, CancellationToken ct)
+        => _runner.RunWithProgressAsync("mkvextract.exe", args, ParseProgress, progress, ct);
 
     [GeneratedRegex(@"(\d+)%")] private static partial Regex ProgressRe();
     private static ExtractionProgress? ParseProgress(string line)
@@ -61,52 +86,57 @@ public sealed partial class MkvExtractorPlugin(string toolPath) : IExtractorPlug
         return new ExtractionProgress("", "", pct, $"Extracting... {pct}%", false);
     }
 
-    private static IEnumerable<string> BuildCommand(ExtractRequest req)
+    internal static IEnumerable<string> BuildTracksCommand(ExtractRequest req)
     {
-        var args = new List<string>();
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
-        args.Add(req.Source.FilePath);
+        var args = new List<string> { req.Source.FilePath, "tracks" };
+        foreach (var tid in req.SelectedTrackIds)
+        {
+            var t = req.Source.Tracks.Find(x => x.Id == tid);
+            if (t is null) continue;
+            var ext = MkvCodecExtensions.GetExtension(t.Properties.GetValueOrDefault("CodecId", ""));
+            args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}.{ext}");
+        }
+        return args;
+    }
 
-        if (req.SelectedTrackIds.Count > 0)
+    internal static IEnumerable<string> BuildChaptersCommand(ExtractRequest req)
+    {
+        var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
+        return new[] { req.Source.FilePath, "chapters", $"{req.OutputDirectory}\\{fn}_chapters.xml" };
+    }
+
+    internal static IEnumerable<string> BuildAttachmentsCommand(ExtractRequest req)
+    {
+        var args = new List<string> { req.Source.FilePath, "attachments" };
+        foreach (var a in req.Source.Attachments)
         {
-            args.Add("tracks");
-            foreach (var tid in req.SelectedTrackIds)
-            {
-                var t = req.Source.Tracks.Find(x => x.Id == tid)!;
-                var ext = MkvCodecExtensions.GetExtension(t.Properties.GetValueOrDefault("CodecId", ""));
-                args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}.{ext}");
-            }
+            var containedPath = OutputPathGuard.ResolveContainedPath(req.OutputDirectory, a.FileName);
+            args.Add($"{a.Id}:{containedPath}");
         }
-        if (req.SelectedChapterIds.Count > 0)
+        return args;
+    }
+
+    internal static IEnumerable<string> BuildTagsCommand(ExtractRequest req)
+    {
+        var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
+        return new[] { req.Source.FilePath, "tags", $"{req.OutputDirectory}\\{fn}_tags.xml" };
+    }
+
+    internal static IEnumerable<string> BuildCueSheetsCommand(ExtractRequest req)
+    {
+        var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
+        return new[] { req.Source.FilePath, "cuesheet", $"{req.OutputDirectory}\\{fn}_cuesheet.cue" };
+    }
+
+    internal static IEnumerable<string> BuildTimestampsCommand(ExtractRequest req)
+    {
+        var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
+        var args = new List<string> { req.Source.FilePath, "timestamps_v2" };
+        foreach (var tid in req.SelectedTrackIds)
         {
-            args.Add("chapters");
-            args.Add($"{req.OutputDirectory}\\{fn}_chapters.xml");
-        }
-        if (req.ExtractAttachments)
-        {
-            args.Add("attachments");
-            foreach (var a in req.Source.Attachments)
-            {
-                args.Add($"{a.Id}:{req.OutputDirectory}\\{a.FileName}");
-            }
-        }
-        if (req.ExtractTags)
-        {
-            args.Add("tags");
-            args.Add($"{req.OutputDirectory}\\{fn}_tags.xml");
-        }
-        if (req.ExtractCueSheets)
-        {
-            args.Add("cuesheet");
-            args.Add($"{req.OutputDirectory}\\{fn}_cuesheet.cue");
-        }
-        if (req.ExtractTimestamps)
-        {
-            args.Add("timestamps_v2");
-            foreach (var tid in req.SelectedTrackIds)
-            {
-                args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}_timestamps.txt");
-            }
+            if (req.Source.Tracks.Find(x => x.Id == tid) is null) continue;
+            args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}_timestamps.txt");
         }
         return args;
     }

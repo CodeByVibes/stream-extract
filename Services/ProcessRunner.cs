@@ -1,15 +1,102 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using StreamExtract.Models;
 
 namespace StreamExtract.Services;
 
-public sealed class ProcessRunner(string toolPath)
+public sealed class ProcessRunner(string toolPath) : IProcessRunner
 {
-    public async Task<(int ExitCode, string StdOut, string StdErr)> RunAsync(
+    public async Task<ProcessResult> RunAsync(
         string fileName, IEnumerable<string> arguments, CancellationToken ct = default,
         string? workingDirectory = null)
     {
-        using var p = new Process
+        using var p = CreateProcess(fileName, arguments, workingDirectory);
+        try
+        {
+            p.Start();
+        }
+        catch (Win32Exception ex)
+        {
+            throw new ExternalToolException(Path.GetFileName(fileName), -1,
+                $"Unable to start '{Path.Combine(toolPath, fileName)}': {ex.Message}");
+        }
+
+        var stdoutTask = p.StandardOutput.ReadToEndAsync(ct);
+        var stderrTask = p.StandardError.ReadToEndAsync(ct);
+
+        try
+        {
+            await Task.WhenAll(stdoutTask, stderrTask);
+            await p.WaitForExitAsync(ct);
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcess(p);
+            await WaitForExitNoThrowAsync(p);
+            throw;
+        }
+        catch
+        {
+            KillProcess(p);
+            await WaitForExitNoThrowAsync(p);
+            throw;
+        }
+
+        if (p.ExitCode != 0)
+        {
+            throw new ExternalToolException(Path.GetFileName(fileName), p.ExitCode, stderrTask.Result);
+        }
+
+        return new ProcessResult(p.ExitCode, stdoutTask.Result, stderrTask.Result);
+    }
+
+    public async Task RunWithProgressAsync(
+        string fileName, IEnumerable<string> arguments,
+        Func<string, ExtractionProgress?> lineParser,
+        IProgress<ExtractionProgress> progress, CancellationToken ct = default)
+    {
+        using var p = CreateProcess(fileName, arguments, workingDirectory: null);
+        try
+        {
+            p.Start();
+        }
+        catch (Win32Exception ex)
+        {
+            throw new ExternalToolException(Path.GetFileName(fileName), -1,
+                $"Unable to start '{Path.Combine(toolPath, fileName)}': {ex.Message}");
+        }
+
+        var stderrTask = p.StandardError.ReadToEndAsync(ct);
+        var stdoutTask = ReadStdoutAsync(p, lineParser, progress, ct);
+
+        try
+        {
+            await stdoutTask;
+            await p.WaitForExitAsync(ct);
+            await stderrTask;
+        }
+        catch (OperationCanceledException)
+        {
+            KillProcess(p);
+            await WaitForExitNoThrowAsync(p);
+            throw;
+        }
+        catch
+        {
+            KillProcess(p);
+            await WaitForExitNoThrowAsync(p);
+            throw;
+        }
+
+        if (p.ExitCode != 0)
+        {
+            throw new ExternalToolException(Path.GetFileName(fileName), p.ExitCode, stderrTask.Result);
+        }
+    }
+
+    private Process CreateProcess(string fileName, IEnumerable<string> arguments, string? workingDirectory)
+    {
+        var p = new Process
         {
             StartInfo = new ProcessStartInfo
             {
@@ -25,71 +112,30 @@ public sealed class ProcessRunner(string toolPath)
         {
             p.StartInfo.ArgumentList.Add(arg);
         }
-        p.Start();
-        var stdoutTask = p.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = p.StandardError.ReadToEndAsync(ct);
-        
-        try
-        {
-            await Task.WhenAll(stdoutTask, stderrTask);
-            await p.WaitForExitAsync(ct);
-        }
-        catch (OperationCanceledException)
-        {
-            if (!p.HasExited)
-            {
-                p.Kill(true);
-            }
-            throw;
-        }
-
-        return (p.ExitCode, stdoutTask.Result, stderrTask.Result);
+        return p;
     }
 
-    public async Task RunWithProgressAsync(
-        string fileName, IEnumerable<string> arguments,
-        Func<string, ExtractionProgress?> lineParser,
-        IProgress<ExtractionProgress> progress, CancellationToken ct = default)
+    private static async Task ReadStdoutAsync(Process p, Func<string, ExtractionProgress?> lineParser,
+        IProgress<ExtractionProgress> progress, CancellationToken ct)
     {
-        using var p = new Process
+        string? line;
+        while ((line = await p.StandardOutput.ReadLineAsync(ct)) is not null)
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = Path.Combine(toolPath, fileName),
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-            }
-        };
-        foreach (var arg in arguments)
-        {
-            p.StartInfo.ArgumentList.Add(arg);
+            ct.ThrowIfCancellationRequested();
+            if (lineParser(line) is { } pr) progress.Report(pr);
         }
-        p.Start();
-        try
-        {
-            string? line;
-            while ((line = await p.StandardOutput.ReadLineAsync(ct)) is not null)
-            {
-                ct.ThrowIfCancellationRequested();
-                if (lineParser(line) is { } pr) progress.Report(pr);
-            }
-            await p.WaitForExitAsync(ct);
-            if (p.ExitCode != 0)
-            {
-                var err = await p.StandardError.ReadToEndAsync(ct);
-                progress.Report(new ExtractionProgress("", "", 0,
-                    $"Failed (code {p.ExitCode}): {err}", IsComplete: true));
-                return;
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            p.Kill(true);
-            progress.Report(new ExtractionProgress("", "", 0, "Cancelled", IsComplete: true));
-            return;
-        }
-        progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
+    }
+
+    private static async Task WaitForExitNoThrowAsync(Process p)
+    {
+        try { await p.WaitForExitAsync(); }
+        catch { }
+    }
+
+    private static void KillProcess(Process p)
+    {
+        if (p.HasExited) return;
+        try { p.Kill(true); }
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception or NotSupportedException) { }
     }
 }

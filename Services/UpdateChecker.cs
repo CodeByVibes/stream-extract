@@ -9,6 +9,7 @@ public sealed record UpdateInfo(Version LatestVersion, string DownloadUrl);
 public sealed class UpdateChecker
 {
     private const string GitHubRepo = "OWNER/REPO"; // TODO: set to your GitHub org/repo
+    private const int MaxResponseBytes = 64 * 1024;
 
     private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
 
@@ -43,10 +44,30 @@ public sealed class UpdateChecker
 
     public async Task<UpdateInfo?> CheckAsync(CancellationToken ct = default)
     {
+        string body;
         try
         {
-            var response = await _httpClient.GetStringAsync(_updateUrl, ct);
-            var json = JsonDocument.Parse(response);
+            using var response = await _httpClient.GetAsync(_updateUrl, HttpCompletionOption.ResponseContentRead, ct);
+            var contentLength = response.Content.Headers.ContentLength;
+            if (contentLength is > MaxResponseBytes)
+                throw new InvalidDataException($"Update response too large ({contentLength} bytes).");
+            body = await response.Content.ReadAsStringAsync(ct);
+            if (body.Length > MaxResponseBytes)
+                throw new InvalidDataException($"Update response too large ({body.Length} bytes).");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not InvalidDataException)
+        {
+            Debug.WriteLine($"[UpdateChecker] Network failure: {ex.Message}");
+            return null;
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
             var (remoteVersionStr, downloadUrl) = _parser(json);
 
             if (!Version.TryParse(remoteVersionStr, out var remoteVersion))
@@ -61,9 +82,9 @@ public sealed class UpdateChecker
 
             return new UpdateInfo(remoteVersion, downloadUrl);
         }
-        catch (Exception ex)
+        catch (JsonException ex)
         {
-            Debug.WriteLine($"[UpdateChecker] Check failed: {ex.Message}");
+            Debug.WriteLine($"[UpdateChecker] Invalid JSON response: {ex.Message}");
             return null;
         }
     }

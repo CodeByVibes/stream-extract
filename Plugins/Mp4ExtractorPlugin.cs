@@ -4,12 +4,14 @@ using StreamExtract.Services;
 
 namespace StreamExtract.Plugins;
 
-public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlugin
+public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? runner = null) : IExtractorPlugin
 {
+    private readonly IProcessRunner _runner = runner ?? new ProcessRunner(toolPath);
+
     private static readonly HashSet<string> _exts = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".m4a", ".m4b" };
 
     public string Name => "MP4 Extractor";
-    public HashSet<string> SupportedExtensions => _exts;
+    public IReadOnlySet<string> SupportedExtensions => _exts;
     public ExtractorFeatures SupportedFeatures => ExtractorFeatures.Tracks | ExtractorFeatures.Chapters;
 
     [GeneratedRegex(@"# Track (\d+) Info - ID (\d+)", RegexOptions.IgnoreCase)]
@@ -27,13 +29,13 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
 
     public async Task<MediaFileInfo> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
-        var runner = new ProcessRunner(toolPath);
-        var (_, stdout, stderr) = await runner.RunAsync("mp4box.exe", new[] { "-info", filePath }, ct);
-        var output = stdout + stderr;
-        
+        var result = await _runner.RunAsync("mp4box.exe", new[] { "-info", filePath }, ct);
+        // mp4box (GPAC) writes all console output, including "-info" listings, to stderr.
+        var output = result.StandardError;
+
         var tracks = new List<TrackInfo>();
         using var reader = new StringReader(output);
-        
+
         string? currentLine = await reader.ReadLineAsync();
         while (currentLine != null)
         {
@@ -44,7 +46,11 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
                 continue;
             }
 
-            var trackId = int.Parse(trackMatch.Groups[2].Value);
+            if (!int.TryParse(trackMatch.Groups[2].Value, out var trackId))
+            {
+                currentLine = await reader.ReadLineAsync();
+                continue;
+            }
 
             var codec = "unknown";
             var mediaType = "";
@@ -74,11 +80,13 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
 
                 // 2 Channel(s)
                 var ch = ChannelsRe().Match(currentLine);
-                if (ch.Success) props["Channels"] = ch.Groups[1].Value;
+                if (ch.Success && int.TryParse(ch.Groups[1].Value, out _))
+                    props["Channels"] = ch.Groups[1].Value;
 
                 // SampleRate 48000
                 var sr = SampleRateRe().Match(currentLine);
-                if (sr.Success) props["SampleRate"] = sr.Groups[1].Value;
+                if (sr.Success && int.TryParse(sr.Groups[1].Value, out _))
+                    props["SampleRate"] = sr.Groups[1].Value;
 
                 currentLine = await reader.ReadLineAsync();
             }
@@ -106,40 +114,28 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath) : IExtractorPlug
 
     public async Task ExtractAsync(ExtractRequest req, IProgress<ExtractionProgress> progress, CancellationToken ct = default)
     {
-        var runner = new ProcessRunner(toolPath);
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
         var total = req.SelectedTrackIds.Count + (req.SelectedChapterIds.Count > 0 ? 1 : 0);
         int done = 0;
 
-        var tasks = new List<Task>();
-
         foreach (var tid in req.SelectedTrackIds)
         {
-            var trackId = tid; // capture variable
-            tasks.Add(Task.Run(async () =>
-            {
-                ct.ThrowIfCancellationRequested();
-                var currentDone = Interlocked.Increment(ref done);
-                progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {trackId}",
-                    total > 0 ? currentDone * 100 / total : 0, $"Extracting track {trackId}...", false));
-                await runner.RunAsync("mp4box.exe", new[] { "-raw", trackId.ToString(), req.Source.FilePath }, ct, req.OutputDirectory);
-            }, ct));
+            ct.ThrowIfCancellationRequested();
+            done++;
+            progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {tid}",
+                total > 0 ? done * 100 / total : 0, $"Extracting track {tid}...", false));
+            await _runner.RunAsync("mp4box.exe", new[] { "-raw", tid.ToString(), req.Source.FilePath }, ct, req.OutputDirectory);
         }
 
         if (req.SelectedChapterIds.Count > 0)
         {
-            tasks.Add(Task.Run(async () =>
-            {
-                ct.ThrowIfCancellationRequested();
-                var currentDone = Interlocked.Increment(ref done);
-                progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
-                    total > 0 ? currentDone * 100 / total : 0, "Extracting chapters...", false));
-                var chapFile = $"{req.OutputDirectory}\\{fn}_chapters.xml";
-                await runner.RunAsync("mp4box.exe", new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
-            }, ct));
+            ct.ThrowIfCancellationRequested();
+            done++;
+            progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
+                total > 0 ? done * 100 / total : 0, "Extracting chapters...", false));
+            var chapFile = $"{req.OutputDirectory}\\{fn}_chapters.xml";
+            await _runner.RunAsync("mp4box.exe", new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
         }
-
-        await Task.WhenAll(tasks);
 
         progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
     }
