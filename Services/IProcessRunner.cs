@@ -7,9 +7,9 @@ public sealed record ProcessResult(int ExitCode, string StandardOutput, string S
 public interface IProcessRunner
 {
     Task<ProcessResult> RunAsync(string fileName, IEnumerable<string> arguments,
-        CancellationToken ct = default, string? workingDirectory = null);
+        CancellationToken ct = default, string? workingDirectory = null, TimeSpan? timeout = null);
 
     Task RunWithProgressAsync(string fileName, IEnumerable<string> arguments,
         Func<string, ExtractionProgress?> lineParser, IProgress<ExtractionProgress> progress,
-        CancellationToken ct = default);
+        CancellationToken ct = default, TimeSpan? timeout = null);
 }

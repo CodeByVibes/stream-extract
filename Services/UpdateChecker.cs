@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 
 namespace StreamExtract.Services;
@@ -47,19 +48,26 @@ public sealed class UpdateChecker
         string body;
         try
         {
-            using var response = await _httpClient.GetAsync(_updateUrl, HttpCompletionOption.ResponseContentRead, ct);
+            using var response = await _httpClient.GetAsync(_updateUrl, HttpCompletionOption.ResponseHeadersRead, ct);
             var contentLength = response.Content.Headers.ContentLength;
             if (contentLength is > MaxResponseBytes)
             {
                 Debug.WriteLine($"[UpdateChecker] Update response too large ({contentLength} bytes).");
                 return null;
             }
-            body = await response.Content.ReadAsStringAsync(ct);
-            if (body.Length > MaxResponseBytes)
+
+            // Stream the body into a bounded buffer so a headerless/chunked response
+            // cannot be fully buffered in memory before the size check.
+            using var stream = await response.Content.ReadAsStreamAsync(ct);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+            var buffer = new char[MaxResponseBytes + 1];
+            var readCount = await reader.ReadAsync(buffer.AsMemory(), ct);
+            if (readCount > MaxResponseBytes)
             {
-                Debug.WriteLine($"[UpdateChecker] Update response too large ({body.Length} bytes).");
+                Debug.WriteLine($"[UpdateChecker] Update response too large (>{MaxResponseBytes} bytes).");
                 return null;
             }
+            body = new string(buffer, 0, readCount);
         }
         catch (OperationCanceledException)
         {

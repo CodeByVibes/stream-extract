@@ -17,7 +17,7 @@ public sealed class FakeProcessRunner : IProcessRunner
         => _handlers.Enqueue(handler);
 
     public Task<ProcessResult> RunAsync(string fileName, IEnumerable<string> arguments,
-        CancellationToken ct = default, string? workingDirectory = null)
+        CancellationToken ct = default, string? workingDirectory = null, TimeSpan? timeout = null)
     {
         RunCount++;
         if (ct.IsCancellationRequested)
@@ -38,7 +38,7 @@ public sealed class FakeProcessRunner : IProcessRunner
 
     public Task RunWithProgressAsync(string fileName, IEnumerable<string> arguments,
         Func<string, ExtractionProgress?> lineParser, IProgress<ExtractionProgress> progress,
-        CancellationToken ct = default)
+        CancellationToken ct = default, TimeSpan? timeout = null)
     {
         RunCount++;
         if (_responses.Count > 0)

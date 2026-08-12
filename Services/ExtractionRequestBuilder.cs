@@ -14,7 +14,7 @@ public static class ExtractionRequestBuilder
 
         return new ExtractRequest(
             imported.Info, outputDirectory,
-            selection.TrackIds, selection.ChapterIds,
+            new HashSet<int>(selection.TrackIds), new HashSet<int>(selection.ChapterIds),
             selection.ExtractAttachments, selection.ExtractTags,
             selection.ExtractCueSheets, selection.ExtractTimestamps,
             selection.ExtractCuesForSelectedTracks);

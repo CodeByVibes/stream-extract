@@ -2,6 +2,8 @@ using StreamExtract.Models;
 using StreamExtract.Plugins;
 using StreamExtract.Services;
 using System.Reflection;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace StreamExtract;
 
@@ -18,6 +20,8 @@ public partial class Form1 : Form
     private Task? _activeOperation;
     private (string Status, Func<CancellationToken, Task> Op)? _pendingOperation;
     private string? _updateDownloadUrl;
+    private int _progressLineStart = -1;
+    private int _progressLineLength;
     private ToolStripStatusLabel _statusLabel = null!;
 
     private TreeView tvFiles = null!;
@@ -106,12 +110,7 @@ public partial class Form1 : Form
             // Switch to UpdateChecker.CreateGitHub("owner", "repo") when publishing on GitHub
             var checker = UpdateChecker.CreateCustom(
                 "https://cudacoder.com/version_stream_extract.php",
-                json =>
-                {
-                    var raw = json!.RootElement.GetString() ?? "";
-                    var version = System.Text.RegularExpressions.Regex.Match(raw, @"[\d]+\.[\d]+\.[\d]+");
-                    return (version.Success ? version.Value : raw, "https://cudacoder.com");
-                });
+                ParseCudacoderUpdate);
 
             var update = await checker.CheckAsync();
             if (update is null) return;
@@ -126,6 +125,15 @@ public partial class Form1 : Form
             // The update check must never crash the app, even if it is closed mid-flight.
             System.Diagnostics.Debug.WriteLine($"[UpdateChecker] Update check failed: {ex.Message}");
         }
+    }
+
+    internal static (string Version, string Url) ParseCudacoderUpdate(JsonDocument? json)
+    {
+        // GetRawText() returns the raw JSON for both string and object responses, so the
+        // version regex works whether the endpoint returns "1.2.3" or {"version":"1.2.3"}.
+        var raw = json?.RootElement.GetRawText() ?? "";
+        var version = Regex.Match(raw, @"[\d]+\.[\d]+\.[\d]+");
+        return (version.Success ? version.Value : "", "https://cudacoder.com");
     }
 
     private void TvFiles_DragEnter(object? sender, DragEventArgs e)
@@ -235,6 +243,7 @@ public partial class Form1 : Form
         if (_importedFiles.Count == 0) return;
 
         rtbDebug.Clear();
+        _progressLineStart = -1;
         btnExtract.Enabled = false;
         await RunExclusiveAsync("Extracting...", ExportFilesAsync);
     }
@@ -388,6 +397,7 @@ public partial class Form1 : Form
         if (_isClosing || IsDisposed) return;
         rtbDebug.AppendText(text + Environment.NewLine);
         rtbDebug.ScrollToCaret();
+        _progressLineStart = -1; // a normal log line ends any in-progress progress line
     }
 
     private void DebugLogProgress(string text)
@@ -395,19 +405,17 @@ public partial class Form1 : Form
         if (_isClosing || IsDisposed) return;
         if (InvokeRequired) { BeginInvoke(() => DebugLogProgress(text)); return; }
 
-        var fullText = rtbDebug.Text;
-        if (fullText.Length < 2) { AppendDebug(text); return; }
-
-        var lastNewline = fullText.LastIndexOf('\n', fullText.Length - 2);
-        var lastLine = lastNewline >= 0 ? fullText[(lastNewline + 1)..] : fullText;
-        if (lastLine.StartsWith("Extracting"))
+        if (_progressLineStart >= 0)
         {
-            var start = lastNewline >= 0 ? lastNewline + 1 : 0;
-            rtbDebug.Select(start, lastLine.Length);
+            // Replace the in-progress line in place instead of re-reading the whole text.
+            rtbDebug.Select(_progressLineStart, _progressLineLength);
             rtbDebug.SelectedText = text;
+            _progressLineLength = text.Length;
         }
         else
         {
+            _progressLineStart = rtbDebug.TextLength;
+            _progressLineLength = text.Length;
             rtbDebug.AppendText(text + Environment.NewLine);
         }
         rtbDebug.SelectionStart = rtbDebug.TextLength;
@@ -430,33 +438,52 @@ public partial class Form1 : Form
             return;
         }
 
-        while (true)
+        Exception? failure = null;
+        try
         {
-            if (_isClosing) break;
-
-            _pendingOperation = null;
-            _perOpCts?.Dispose();
-            _perOpCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
-            var ct = _perOpCts.Token;
-
-            SetStatus(statusText);
-            try
+            while (true)
             {
-                _activeOperation = op(ct);
-                await _activeOperation;
-            }
-            finally
-            {
-                _activeOperation = null;
-            }
+                if (_isClosing) break;
 
-            var next = _pendingOperation;
-            if (next is null) break;
-            statusText = next.Value.Status;
-            op = next.Value.Op;
+                _pendingOperation = null;
+                _perOpCts?.Dispose();
+                _perOpCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+                var ct = _perOpCts.Token;
+
+                SetStatus(statusText);
+                try
+                {
+                    _activeOperation = op(ct);
+                    await _activeOperation;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Cancellation (form closing): stop silently.
+                }
+                catch (Exception ex)
+                {
+                    // Remember the first failure but keep draining any queued operation,
+                    // so a thrown op no longer leaves the status label stuck or drops work.
+                    failure ??= ex;
+                }
+                finally
+                {
+                    _activeOperation = null;
+                }
+
+                var next = _pendingOperation;
+                if (next is null) break;
+                statusText = next.Value.Status;
+                op = next.Value.Op;
+            }
+        }
+        finally
+        {
+            SetStatus("");
         }
 
-        SetStatus("");
+        if (failure is not null)
+            throw failure;
     }
 
     private void SetStatus(string text)

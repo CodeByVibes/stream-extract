@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
+using System.Text.Json;
 using StreamExtract.Services;
 
 namespace StreamExtract.Tests;
@@ -138,5 +139,19 @@ public class UpdateCheckerTests
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => CheckerFor(server.Url).CheckAsync(cts.Token));
+    }
+
+    [Theory]
+    [InlineData("{\"version\":\"1.2.3\"}", "1.2.3")]
+    [InlineData("\"1.2.3\"", "1.2.3")]
+    [InlineData("{\"latest\":\"v2.0.0-rc1\"}", "2.0.0")]
+    [InlineData("\"no version here\"", "")]
+    public void ParseCudacoderUpdate_ExtractsVersionFromStringOrObject(string body, string expected)
+    {
+        using var json = JsonDocument.Parse(body);
+        var (version, url) = Form1.ParseCudacoderUpdate(json);
+
+        Assert.Equal(expected, version);
+        Assert.Equal("https://cudacoder.com", url);
     }
 }

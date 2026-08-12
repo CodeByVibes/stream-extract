@@ -130,7 +130,9 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
                 total > 0 ? done * 100 / total : 0, $"Extracting track {tid}...", false));
             try
             {
-                await _runner.RunAsync("mp4box.exe", new[] { "-raw", tid.ToString(), req.Source.FilePath }, ct, req.OutputDirectory);
+                await _runner.RunAsync("mp4box.exe",
+                    new[] { "-raw", $"{tid}:output={BuildRawOutputName(req, tid)}", req.Source.FilePath },
+                    ct, req.OutputDirectory);
             }
             catch (OperationCanceledException)
             {
@@ -165,5 +167,15 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
 
         progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
         return failures.Count == 0 ? ExtractOutcome.Success : new ExtractOutcome(false, failures);
+    }
+
+    internal static string BuildRawOutputName(ExtractRequest req, int trackId)
+    {
+        var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
+        var track = req.Source.Tracks.Find(t => t.Id == trackId);
+        var ext = track is null
+            ? "bin"
+            : Mp4CodecExtensions.GetExtension(track.Properties.GetValueOrDefault("CodecId", ""));
+        return $"{fn}_Track{trackId + 1}.{ext}";
     }
 }

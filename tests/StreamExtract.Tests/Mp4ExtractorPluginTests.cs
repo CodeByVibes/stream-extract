@@ -209,4 +209,30 @@ public class Mp4ExtractorPluginTests
 
         Assert.Empty(info.Tracks);
     }
+
+    [Theory]
+    [InlineData("avc1", "h264")]
+    [InlineData("AVC3", "h264")]
+    [InlineData("hvc1", "h265")]
+    [InlineData("mp4a", "aac")]
+    [InlineData("opus", "opus")]
+    [InlineData("av01", "av1")]
+    [InlineData("something-unknown", "bin")]
+    public void Mp4CodecExtensions_GetExtension_MapsCodecs(string codec, string expected)
+    {
+        Assert.Equal(expected, Mp4CodecExtensions.GetExtension(codec));
+    }
+
+    [Fact]
+    public void BuildRawOutputName_UsesCodecExtension()
+    {
+        var info = new MediaFileInfo(
+            @"C:\media\movie.mp4", "movie.mp4",
+            ExtractorFeatures.Tracks,
+            [new TrackInfo(1, TrackType.Video, "avc1", "Track 1", "und", new() { ["CodecId"] = "avc1" })],
+            [], [], []);
+        var req = new ExtractRequest(info, @"D:\out", [1], [], false, false, false, false, false);
+
+        Assert.Equal("movie_Track2.h264", Mp4ExtractorPlugin.BuildRawOutputName(req, 1));
+    }
 }

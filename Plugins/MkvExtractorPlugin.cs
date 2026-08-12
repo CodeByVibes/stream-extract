@@ -148,7 +148,10 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
         var xmlPath = $"{req.OutputDirectory}\\{fn}_chapters.xml";
 
-        await RunModeAsync(BuildChaptersCommand(req), modeIndex, modeCount, progress, ct);
+        // If "chapters" was also selected it already wrote chapters.xml just before this
+        // mode; only extract it here when it has not been produced yet.
+        if (req.SelectedChapterIds.Count == 0)
+            await RunModeAsync(BuildChaptersCommand(req), modeIndex, modeCount, progress, ct);
 
         var chapters = ParseChapterXml(await File.ReadAllTextAsync(xmlPath, ct));
         if (chapters.Count == 0)
@@ -160,7 +163,7 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
             var track = req.Source.Tracks.Find(t => t.Id == tid);
             if (track is null) continue;
             var ext = MkvCodecExtensions.GetExtension(track.Properties.GetValueOrDefault("CodecId", ""));
-            var cuePath = $"{req.OutputDirectory}\\{fn}_Track{tid + 1}_cues.cue";
+            var cuePath = OutputPathGuard.ResolveContainedPath(req.OutputDirectory, $"{fn}_Track{tid + 1}_cues.cue");
             await File.WriteAllTextAsync(cuePath, BuildPerTrackCue($"{fn}_Track{tid + 1}.{ext}", chapters), ct);
         }
     }
@@ -244,11 +247,17 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
     {
         var args = new List<string> { req.Source.FilePath, "attachments" };
         var failures = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var a in req.Source.Attachments)
         {
             try
             {
                 var containedPath = OutputPathGuard.ResolveContainedPath(req.OutputDirectory, a.FileName);
+                if (!seen.Add(containedPath))
+                {
+                    failures.Add($"attachment '{a.FileName}': duplicate output name (skipped)");
+                    continue;
+                }
                 args.Add($"{a.Id}:{containedPath}");
             }
             catch (InvalidDataException ex)

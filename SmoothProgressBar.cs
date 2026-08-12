@@ -13,6 +13,7 @@ public class SmoothProgressBar : UserControl
     private int _val = 0;
     private Color _barColor = Color.FromArgb(100, 100, 130, 255);
     private Color _textColor = Color.Black;
+    private Font? _textFont;
 
     public SmoothProgressBar()
     {
@@ -22,7 +23,23 @@ public class SmoothProgressBar : UserControl
     protected override void OnResize(EventArgs e)
     {
         base.OnResize(e);
+        _textFont?.Dispose();
+        _textFont = null;
         Invalidate();
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        _textFont?.Dispose();
+        _textFont = null;
+        Invalidate();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) _textFont?.Dispose();
+        base.Dispose(disposing);
     }
 
     protected override void OnPaint(PaintEventArgs e)
@@ -37,7 +54,7 @@ public class SmoothProgressBar : UserControl
 
         Draw3DBorder(e.Graphics);
 
-        float textSize = Height * 0.30f;
+        float textSize = Math.Max(1f, Height * 0.30f);
         int textPercent = (int)(ProgressMath.Percent(Value, Minimum, Maximum) * 100);
 
         using StringFormat sf = new()
@@ -45,10 +62,10 @@ public class SmoothProgressBar : UserControl
             LineAlignment = StringAlignment.Center,
             Alignment = StringAlignment.Center
         };
-        using Font textFont = new(DefaultFont.Name, textSize);
+        _textFont ??= new Font(DefaultFont.Name, textSize);
         using SolidBrush textBrush = new(_textColor);
 
-        e.Graphics.DrawString(textPercent + "%", textFont, textBrush, ClientRectangle, sf);
+        e.Graphics.DrawString(textPercent + "%", _textFont, textBrush, ClientRectangle, sf);
     }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]

@@ -93,6 +93,24 @@ public class MkvExtractorPluginCommandTests
     }
 
     [Fact]
+    public void AttachmentsCommand_DuplicateNamesCaseInsensitive_SkipsLaterDuplicate()
+    {
+        var info = new MediaFileInfo(
+            @"C:\media\movie.mkv", "movie.mkv",
+            ExtractorFeatures.Attachments,
+            [], [],
+            [new AttachmentInfo(1, "font.ttf", "font/ttf", 1000), new AttachmentInfo(2, "FONT.TTF", "font/ttf", 1000)],
+            []);
+        var req = new ExtractRequest(info, @"D:\out", [], [], true, false, false, false, false);
+        var (args, failures) = MkvExtractorPlugin.BuildAttachmentsCommand(req);
+
+        Assert.Single(args, a => a.StartsWith("1:"));
+        Assert.DoesNotContain(args, a => a.StartsWith("2:"));
+        Assert.Single(failures);
+        Assert.Contains(failures, f => f.Contains("duplicate"));
+    }
+
+    [Fact]
     public void TagsCommand_ContainsTagsMode()
     {
         var req = MakeRequest(tags: true);

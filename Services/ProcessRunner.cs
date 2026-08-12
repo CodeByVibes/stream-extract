@@ -11,8 +11,11 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
 
     public async Task<ProcessResult> RunAsync(
         string fileName, IEnumerable<string> arguments, CancellationToken ct = default,
-        string? workingDirectory = null)
+        string? workingDirectory = null, TimeSpan? timeout = null)
     {
+        using var timeoutCts = CreateTimeoutCts(ct, timeout);
+        var effectiveCt = timeoutCts?.Token ?? ct;
+
         using var p = CreateProcess(fileName, arguments, workingDirectory);
         try
         {
@@ -24,13 +27,13 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
                 $"Unable to start '{Path.Combine(toolPath, fileName)}': {ex.Message}");
         }
 
-        var stdoutTask = p.StandardOutput.ReadToEndAsync(ct);
-        var stderrTask = p.StandardError.ReadToEndAsync(ct);
+        var stdoutTask = p.StandardOutput.ReadToEndAsync(effectiveCt);
+        var stderrTask = p.StandardError.ReadToEndAsync(effectiveCt);
 
         try
         {
             await Task.WhenAll(stdoutTask, stderrTask);
-            await p.WaitForExitAsync(ct);
+            await p.WaitForExitAsync(effectiveCt);
         }
         catch (OperationCanceledException)
         {
@@ -57,8 +60,12 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
     public async Task RunWithProgressAsync(
         string fileName, IEnumerable<string> arguments,
         Func<string, ExtractionProgress?> lineParser,
-        IProgress<ExtractionProgress> progress, CancellationToken ct = default)
+        IProgress<ExtractionProgress> progress, CancellationToken ct = default,
+        TimeSpan? timeout = null)
     {
+        using var timeoutCts = CreateTimeoutCts(ct, timeout);
+        var effectiveCt = timeoutCts?.Token ?? ct;
+
         using var p = CreateProcess(fileName, arguments, workingDirectory: null);
         try
         {
@@ -70,14 +77,14 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
                 $"Unable to start '{Path.Combine(toolPath, fileName)}': {ex.Message}");
         }
 
-        var stderrTask = p.StandardError.ReadToEndAsync(ct);
+        var stderrTask = p.StandardError.ReadToEndAsync(effectiveCt);
         var diagnostics = new StringBuilder();
-        var stdoutTask = ReadStdoutAsync(p, lineParser, progress, diagnostics, ct);
+        var stdoutTask = ReadStdoutAsync(p, lineParser, progress, diagnostics, effectiveCt);
 
         try
         {
             await stdoutTask;
-            await p.WaitForExitAsync(ct);
+            await p.WaitForExitAsync(effectiveCt);
             await stderrTask;
         }
         catch (OperationCanceledException)
@@ -148,6 +155,14 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
 
     private static string FirstNonEmpty(string primary, string fallback)
         => string.IsNullOrWhiteSpace(primary) ? fallback : primary;
+
+    private static CancellationTokenSource? CreateTimeoutCts(CancellationToken ct, TimeSpan? timeout)
+    {
+        if (timeout is not { } t) return null;
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(t);
+        return cts;
+    }
 
     private static async Task WaitForExitNoThrowAsync(Process p)
     {

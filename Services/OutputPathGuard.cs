@@ -28,7 +28,14 @@ public static class OutputPathGuard
         if (baseName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
             throw new InvalidDataException($"Output file name contains invalid characters: '{fileName}'.");
 
-        var stem = Path.GetFileNameWithoutExtension(baseName);
+        // Windows strips trailing dots (and spaces) from file names, so a name ending in
+        // '.' would silently alias an existing file or device — reject it.
+        if (baseName.EndsWith('.'))
+            throw new InvalidDataException($"Output file name ends with a dot: '{fileName}'.");
+
+        // Trim trailing spaces/dots from the stem before the device check: "CON .txt" or
+        // "CON..txt" normalize to the reserved CON device on Windows.
+        var stem = Path.GetFileNameWithoutExtension(baseName).TrimEnd(' ', '.');
         if (_deviceNames.Contains(stem, StringComparer.OrdinalIgnoreCase))
             throw new InvalidDataException($"Output file name is a reserved device name: '{fileName}'.");
 

@@ -68,6 +68,16 @@ public class OutputPathGuardTests
         Assert.Throws<InvalidDataException>(() => OutputPathGuard.ResolveContainedPath(Root, fileName));
     }
 
+    [Theory]
+    [InlineData("CON .txt")]
+    [InlineData("con..txt")]
+    [InlineData("NUL.")]
+    [InlineData("file.txt.")]
+    public void NormalizationEdgeNames_AreRejected(string fileName)
+    {
+        Assert.Throws<InvalidDataException>(() => OutputPathGuard.ResolveContainedPath(Root, fileName));
+    }
+
     [Fact]
     public void NameLongerThan255_IsRejected()
     {

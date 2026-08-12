@@ -84,4 +84,16 @@ public class ProcessRunnerTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => Runner.RunAsync("cmd.exe", Cmd("echo x"), cts.Token));
     }
+
+    [Fact]
+    public async Task RunAsync_Timeout_KillsHungProcess()
+    {
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // ping -n 60 would run ~60s; the 1s timeout must abort it well before then.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => Runner.RunAsync("cmd.exe", Cmd("ping -n 60 127.0.0.1 > nul"), default, null, TimeSpan.FromSeconds(1)));
+        sw.Stop();
+
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(30), $"Timeout took too long: {sw.Elapsed}");
+    }
 }
