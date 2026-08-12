@@ -1,11 +1,14 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Text;
 using StreamExtract.Models;
 
 namespace StreamExtract.Services;
 
 public sealed class ProcessRunner(string toolPath) : IProcessRunner
 {
+    private const int MaxDiagnosticChars = 4096;
+
     public async Task<ProcessResult> RunAsync(
         string fileName, IEnumerable<string> arguments, CancellationToken ct = default,
         string? workingDirectory = null)
@@ -44,7 +47,8 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
 
         if (p.ExitCode != 0)
         {
-            throw new ExternalToolException(Path.GetFileName(fileName), p.ExitCode, stderrTask.Result);
+            throw new ExternalToolException(Path.GetFileName(fileName), p.ExitCode,
+                FirstNonEmpty(stderrTask.Result, stdoutTask.Result));
         }
 
         return new ProcessResult(p.ExitCode, stdoutTask.Result, stderrTask.Result);
@@ -67,7 +71,8 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
         }
 
         var stderrTask = p.StandardError.ReadToEndAsync(ct);
-        var stdoutTask = ReadStdoutAsync(p, lineParser, progress, ct);
+        var diagnostics = new StringBuilder();
+        var stdoutTask = ReadStdoutAsync(p, lineParser, progress, diagnostics, ct);
 
         try
         {
@@ -90,7 +95,9 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
 
         if (p.ExitCode != 0)
         {
-            throw new ExternalToolException(Path.GetFileName(fileName), p.ExitCode, stderrTask.Result);
+            // mkvextract writes both progress and error messages to stdout; stderr is usually empty.
+            throw new ExternalToolException(Path.GetFileName(fileName), p.ExitCode,
+                FirstNonEmpty(stderrTask.Result, diagnostics.ToString()));
         }
     }
 
@@ -116,15 +123,31 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
     }
 
     private static async Task ReadStdoutAsync(Process p, Func<string, ExtractionProgress?> lineParser,
-        IProgress<ExtractionProgress> progress, CancellationToken ct)
+        IProgress<ExtractionProgress> progress, StringBuilder diagnostics, CancellationToken ct)
     {
         string? line;
         while ((line = await p.StandardOutput.ReadLineAsync(ct)) is not null)
         {
             ct.ThrowIfCancellationRequested();
-            if (lineParser(line) is { } pr) progress.Report(pr);
+            if (lineParser(line) is { } pr)
+            {
+                progress.Report(pr);
+                continue;
+            }
+            AppendDiagnostic(diagnostics, line);
         }
     }
+
+    private static void AppendDiagnostic(StringBuilder diagnostics, string line)
+    {
+        if (diagnostics.Length >= MaxDiagnosticChars) return;
+        var remaining = MaxDiagnosticChars - diagnostics.Length;
+        if (line.Length <= remaining) diagnostics.AppendLine(line);
+        else diagnostics.AppendLine(line[..remaining]);
+    }
+
+    private static string FirstNonEmpty(string primary, string fallback)
+        => string.IsNullOrWhiteSpace(primary) ? fallback : primary;
 
     private static async Task WaitForExitNoThrowAsync(Process p)
     {

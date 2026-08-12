@@ -7,4 +7,5 @@ public sealed record ImportedFile(string FilePath, IExtractorPlugin Plugin, Medi
 public sealed record FileSelection(
     HashSet<int> TrackIds, bool ExtractAttachments,
     HashSet<int> ChapterIds, bool ExtractTags,
-    bool ExtractCueSheets, bool ExtractTimestamps);
+    bool ExtractCueSheets, bool ExtractTimestamps,
+    bool ExtractCuesForSelectedTracks);

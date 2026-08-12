@@ -47,9 +47,11 @@ public static class OutputPathGuard
     public static bool IsValidOutputDirectory(string outputDirectory)
     {
         if (string.IsNullOrWhiteSpace(outputDirectory)) return false;
+        if (!Path.IsPathRooted(outputDirectory)) return false;
         try
         {
-            return Path.IsPathRooted(Path.GetFullPath(outputDirectory));
+            _ = Path.GetFullPath(outputDirectory);
+            return true;
         }
         catch (Exception ex) when (ex is ArgumentException or PathTooLongException or NotSupportedException)
         {

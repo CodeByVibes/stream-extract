@@ -20,7 +20,7 @@ public class ExtractionRequestBuilderTests
     public void EmptySelection_ReturnsNull()
     {
         var imported = MakeImported();
-        var selection = new FileSelection([], false, [], false, false, false);
+        var selection = new FileSelection([], false, [], false, false, false, false);
         Assert.Null(ExtractionRequestBuilder.TryBuild(imported, @"C:\out", selection));
     }
 
@@ -28,7 +28,7 @@ public class ExtractionRequestBuilderTests
     public void TrackSelection_MapsTrackIdsAndFlags()
     {
         var imported = MakeImported();
-        var selection = new FileSelection([0], true, [], true, false, false);
+        var selection = new FileSelection([0], true, [], true, false, false, false);
         var request = ExtractionRequestBuilder.TryBuild(imported, @"C:\out", selection);
 
         Assert.NotNull(request);
@@ -43,15 +43,23 @@ public class ExtractionRequestBuilderTests
     public void InvalidOutputDirectory_ReturnsNull()
     {
         var imported = MakeImported();
-        var selection = new FileSelection([0], false, [], false, false, false);
+        var selection = new FileSelection([0], false, [], false, false, false, false);
         Assert.Null(ExtractionRequestBuilder.TryBuild(imported, "   ", selection));
+    }
+
+    [Fact]
+    public void RelativeOutputDirectory_ReturnsNull()
+    {
+        var imported = MakeImported();
+        var selection = new FileSelection([0], false, [], false, false, false, false);
+        Assert.Null(ExtractionRequestBuilder.TryBuild(imported, "out", selection));
     }
 
     [Fact]
     public void OutputDirectory_IsUsedVerbatim()
     {
         var imported = MakeImported();
-        var selection = new FileSelection([0], false, [], false, false, false);
+        var selection = new FileSelection([0], false, [], false, false, false, false);
         var request = ExtractionRequestBuilder.TryBuild(imported, @"D:\media\out", selection);
         Assert.Equal(@"D:\media\out", request!.OutputDirectory);
         Assert.Same(imported.Info, request.Source);

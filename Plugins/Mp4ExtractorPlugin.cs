@@ -24,8 +24,11 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
     private static partial Regex ChannelsRe();
     [GeneratedRegex(@"SampleRate\s+(\d+)")]
     private static partial Regex SampleRateRe();
-    [GeneratedRegex(@"Chapter\s+#(\d+)\s*-\s*\S+\s*-\s*""(.+?)""", RegexOptions.IgnoreCase)]
+    // Real mp4box output: '#1 - 00:00:00.000 - "Intro"' (older GPAC versions prefix with 'Chapter').
+    [GeneratedRegex(@"(?:Chapter\s+)?#(\d+)\s*-\s*(?:\S+)\s*-\s*""(.+?)""", RegexOptions.IgnoreCase)]
     private static partial Regex ChapterRe();
+
+    private const int MaxTrackInfoLines = 500;
 
     public async Task<MediaFileInfo> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
@@ -58,12 +61,12 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
 
             int linesRead = 0;
             currentLine = await reader.ReadLineAsync();
-            while (currentLine != null && linesRead < 20)
+            while (currentLine != null && linesRead < MaxTrackInfoLines)
             {
                 linesRead++;
 
-                // Stop at next track header
-                if (TrackRe().IsMatch(currentLine)) break;
+                // Stop at the next track header or at the blank line that separates track blocks.
+                if (TrackRe().IsMatch(currentLine) || currentLine.Length == 0) break;
 
                 // Media Type: vide:avc1
                 var mt = MediaTypeRe().Match(currentLine);
@@ -112,11 +115,12 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
         return new MediaFileInfo(filePath, Path.GetFileName(filePath), SupportedFeatures, tracks, chapters, [], []);
     }
 
-    public async Task ExtractAsync(ExtractRequest req, IProgress<ExtractionProgress> progress, CancellationToken ct = default)
+    public async Task<ExtractOutcome> ExtractAsync(ExtractRequest req, IProgress<ExtractionProgress> progress, CancellationToken ct = default)
     {
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
         var total = req.SelectedTrackIds.Count + (req.SelectedChapterIds.Count > 0 ? 1 : 0);
         int done = 0;
+        var failures = new List<string>();
 
         foreach (var tid in req.SelectedTrackIds)
         {
@@ -124,7 +128,18 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
             done++;
             progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {tid}",
                 total > 0 ? done * 100 / total : 0, $"Extracting track {tid}...", false));
-            await _runner.RunAsync("mp4box.exe", new[] { "-raw", tid.ToString(), req.Source.FilePath }, ct, req.OutputDirectory);
+            try
+            {
+                await _runner.RunAsync("mp4box.exe", new[] { "-raw", tid.ToString(), req.Source.FilePath }, ct, req.OutputDirectory);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"track {tid}: {ex.Message}");
+            }
         }
 
         if (req.SelectedChapterIds.Count > 0)
@@ -133,10 +148,22 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
             done++;
             progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
                 total > 0 ? done * 100 / total : 0, "Extracting chapters...", false));
-            var chapFile = $"{req.OutputDirectory}\\{fn}_chapters.xml";
-            await _runner.RunAsync("mp4box.exe", new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
+            try
+            {
+                var chapFile = $"{req.OutputDirectory}\\{fn}_chapters.xml";
+                await _runner.RunAsync("mp4box.exe", new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"chapters: {ex.Message}");
+            }
         }
 
         progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
+        return failures.Count == 0 ? ExtractOutcome.Success : new ExtractOutcome(false, failures);
     }
 }

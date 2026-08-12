@@ -50,18 +50,24 @@ public sealed class UpdateChecker
             using var response = await _httpClient.GetAsync(_updateUrl, HttpCompletionOption.ResponseContentRead, ct);
             var contentLength = response.Content.Headers.ContentLength;
             if (contentLength is > MaxResponseBytes)
-                throw new InvalidDataException($"Update response too large ({contentLength} bytes).");
+            {
+                Debug.WriteLine($"[UpdateChecker] Update response too large ({contentLength} bytes).");
+                return null;
+            }
             body = await response.Content.ReadAsStringAsync(ct);
             if (body.Length > MaxResponseBytes)
-                throw new InvalidDataException($"Update response too large ({body.Length} bytes).");
+            {
+                Debug.WriteLine($"[UpdateChecker] Update response too large ({body.Length} bytes).");
+                return null;
+            }
         }
         catch (OperationCanceledException)
         {
             throw;
         }
-        catch (Exception ex) when (ex is not InvalidDataException)
+        catch (Exception ex)
         {
-            Debug.WriteLine($"[UpdateChecker] Network failure: {ex.Message}");
+            Debug.WriteLine($"[UpdateChecker] Update check failed: {ex.Message}");
             return null;
         }
 
@@ -82,9 +88,13 @@ public sealed class UpdateChecker
 
             return new UpdateInfo(remoteVersion, downloadUrl);
         }
-        catch (JsonException ex)
+        catch (OperationCanceledException)
         {
-            Debug.WriteLine($"[UpdateChecker] Invalid JSON response: {ex.Message}");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[UpdateChecker] Invalid update response: {ex.Message}");
             return null;
         }
     }

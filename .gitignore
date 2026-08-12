@@ -80,4 +80,5 @@ publish/
 *.mkv
 
 .kilo/
+.reasonix/
 *REPORT*.md

@@ -16,11 +16,13 @@ public static class ExtractionRequestBuilder
             imported.Info, outputDirectory,
             selection.TrackIds, selection.ChapterIds,
             selection.ExtractAttachments, selection.ExtractTags,
-            selection.ExtractCueSheets, selection.ExtractTimestamps);
+            selection.ExtractCueSheets, selection.ExtractTimestamps,
+            selection.ExtractCuesForSelectedTracks);
     }
 
     private static bool IsNonEmpty(FileSelection selection)
         => selection.TrackIds.Count > 0 || selection.ChapterIds.Count > 0
             || selection.ExtractAttachments || selection.ExtractTags
-            || selection.ExtractCueSheets || selection.ExtractTimestamps;
+            || selection.ExtractCueSheets || selection.ExtractTimestamps
+            || selection.ExtractCuesForSelectedTracks;
 }

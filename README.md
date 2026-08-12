@@ -121,8 +121,9 @@ The solution is split into three layers:
 
 Key design decisions:
 
-- A non-zero exit code from a native tool throws `ExternalToolException`; the
-  UI reports partial failures instead of a false "Done".
+- A non-zero exit code from a native tool is captured as a per-mode failure in the
+  returned `ExtractOutcome`; the UI logs each failure and keeps going with the
+  remaining modes instead of a false "Done". Cancellation still aborts everything.
 - Attachment output paths pass through `OutputPathGuard.ResolveContainedPath`,
   so a malicious file name inside an MKV cannot escape the selected output
   directory.

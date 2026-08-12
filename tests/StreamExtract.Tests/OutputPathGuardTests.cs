@@ -82,6 +82,27 @@ public class OutputPathGuardTests
     }
 
     [Fact]
+    public void IsValidOutputDirectory_RelativePath_IsRejected()
+    {
+        Assert.False(OutputPathGuard.IsValidOutputDirectory("out"));
+        Assert.False(OutputPathGuard.IsValidOutputDirectory(@"sub\dir"));
+    }
+
+    [Fact]
+    public void IsValidOutputDirectory_AbsolutePath_IsAccepted()
+    {
+        Assert.True(OutputPathGuard.IsValidOutputDirectory(Path.GetTempPath()));
+        Assert.True(OutputPathGuard.IsValidOutputDirectory(@"C:\media\out"));
+    }
+
+    [Fact]
+    public void IsValidOutputDirectory_Whitespace_IsRejected()
+    {
+        Assert.False(OutputPathGuard.IsValidOutputDirectory("   "));
+        Assert.False(OutputPathGuard.IsValidOutputDirectory(""));
+    }
+
+    [Fact]
     public void NestedSafeName_UsesBaseNameOnly()
     {
         var result = OutputPathGuard.ResolveContainedPath(Root, @"sub\folder\file.txt");

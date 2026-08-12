@@ -7,7 +7,7 @@ namespace StreamExtract;
 
 public partial class Form1 : Form
 {
-    private enum SelectionKind { Attachments, Chapters, Tags, CueSheet, CuesForSelectedTracks, Timestamps }
+    internal enum SelectionKind { Attachments, Chapters, Tags, CueSheet, CuesForSelectedTracks, Timestamps }
 
     private bool _isClosing;
     private readonly PluginRegistry _pluginRegistry = new();
@@ -16,7 +16,9 @@ public partial class Form1 : Form
     private readonly CancellationTokenSource _lifetimeCts = new();
     private CancellationTokenSource? _perOpCts;
     private Task? _activeOperation;
+    private (string Status, Func<CancellationToken, Task> Op)? _pendingOperation;
     private string? _updateDownloadUrl;
+    private ToolStripStatusLabel _statusLabel = null!;
 
     private TreeView tvFiles = null!;
     private ImageList ilIcons = null!;
@@ -36,9 +38,11 @@ public partial class Form1 : Form
     public Form1()
     {
         InitializeComponent();
+        _statusLabel = new ToolStripStatusLabel();
+        statusStrip1.Items.Add(_statusLabel);
         using var ico = Assembly.GetExecutingAssembly()
-            .GetManifestResourceStream("StreamExtract.Resources.AppIcon.ico")!;
-        Icon = new Icon(ico);
+            .GetManifestResourceStream("StreamExtract.Resources.AppIcon.ico");
+        if (ico is not null) Icon = new Icon(ico);
 
         var v = Assembly.GetExecutingAssembly().GetName().Version!;
         Text = $"StreamExtract v{v.Major}.{v.Minor}";
@@ -97,22 +101,31 @@ public partial class Form1 : Form
 
     private async Task CheckUpdateAsync()
     {
-        // Switch to UpdateChecker.CreateGitHub("owner", "repo") when publishing on GitHub
-        var checker = UpdateChecker.CreateCustom(
-            "https://cudacoder.com/version_stream_extract.php",
-            json =>
-            {
-                var raw = json!.RootElement.GetString() ?? "";
-                var version = System.Text.RegularExpressions.Regex.Match(raw, @"[\d]+\.[\d]+\.[\d]+");
-                return (version.Success ? version.Value : raw, "https://cudacoder.com");
-            });
+        try
+        {
+            // Switch to UpdateChecker.CreateGitHub("owner", "repo") when publishing on GitHub
+            var checker = UpdateChecker.CreateCustom(
+                "https://cudacoder.com/version_stream_extract.php",
+                json =>
+                {
+                    var raw = json!.RootElement.GetString() ?? "";
+                    var version = System.Text.RegularExpressions.Regex.Match(raw, @"[\d]+\.[\d]+\.[\d]+");
+                    return (version.Success ? version.Value : raw, "https://cudacoder.com");
+                });
 
-        var update = await checker.CheckAsync();
-        if (update is null) return;
+            var update = await checker.CheckAsync();
+            if (update is null) return;
 
-        _updateDownloadUrl = update.DownloadUrl;
-        if (InvokeRequired) { BeginInvoke(() => btnNewVersion.Visible = true); return; }
-        btnNewVersion.Visible = true;
+            _updateDownloadUrl = update.DownloadUrl;
+            if (IsDisposed || _isClosing) return;
+            if (InvokeRequired) { BeginInvoke(() => btnNewVersion.Visible = true); return; }
+            btnNewVersion.Visible = true;
+        }
+        catch (Exception ex)
+        {
+            // The update check must never crash the app, even if it is closed mid-flight.
+            System.Diagnostics.Debug.WriteLine($"[UpdateChecker] Update check failed: {ex.Message}");
+        }
     }
 
     private void TvFiles_DragEnter(object? sender, DragEventArgs e)
@@ -121,7 +134,7 @@ public partial class Form1 : Form
     private async void TvFiles_DragDrop(object? sender, DragEventArgs e)
     {
         _pendingPaths = ((string[])e.Data!.GetData(DataFormats.FileDrop)!).ToList();
-        await RunExclusiveAsync(StartImportAsync);
+        await RunExclusiveAsync("Importing files...", StartImportAsync);
     }
 
     private async void BtnOpenFiles_Click(object? sender, EventArgs e)
@@ -133,7 +146,7 @@ public partial class Form1 : Form
         };
         if (dlg.ShowDialog() != DialogResult.OK) return;
         _pendingPaths = dlg.FileNames.ToList();
-        await RunExclusiveAsync(StartImportAsync);
+        await RunExclusiveAsync("Importing files...", StartImportAsync);
     }
 
     private async Task StartImportAsync(CancellationToken ct)
@@ -161,6 +174,7 @@ public partial class Form1 : Form
             catch (Exception ex) { DebugLog($"Error importing {Path.GetFileName(fp)}: {ex.Message}"); }
         }
 
+        if (_isClosing) return;
         btnExtract.Enabled = _importedFiles.Count > 0;
     }
 
@@ -191,9 +205,10 @@ public partial class Form1 : Form
         if ((info.Features & ExtractorFeatures.CueSheets) != 0)
         {
             root.Nodes.Add(new TreeNode("CUE sheet", 9, 9) { Tag = SelectionKind.CueSheet });
-            root.Nodes.Add(new TreeNode("Cues for selected tracks", 9, 9) { Tag = SelectionKind.CuesForSelectedTracks });
+            if (info.Tracks.Count > 0)
+                root.Nodes.Add(new TreeNode("Cues for selected tracks", 9, 9) { Tag = SelectionKind.CuesForSelectedTracks });
         }
-        if ((info.Features & ExtractorFeatures.Timestamps) != 0)
+        if ((info.Features & ExtractorFeatures.Timestamps) != 0 && info.Tracks.Count > 0)
             root.Nodes.Add(new TreeNode("Timestamps for selected tracks", 8, 8) { Tag = SelectionKind.Timestamps });
 
         root.ExpandAll();
@@ -221,7 +236,7 @@ public partial class Form1 : Form
 
         rtbDebug.Clear();
         btnExtract.Enabled = false;
-        await RunExclusiveAsync(ExportFilesAsync);
+        await RunExclusiveAsync("Extracting...", ExportFilesAsync);
     }
 
     private async Task ExportFilesAsync(CancellationToken ct)
@@ -252,12 +267,20 @@ public partial class Form1 : Form
             try
             {
                 var progress = new Progress<ExtractionProgress>(UpdateProgressUi);
-                await imported.Plugin.ExtractAsync(request, progress, ct);
-                succeeded++;
+                var outcome = await imported.Plugin.ExtractAsync(request, progress, ct);
+                if (outcome.Succeeded)
+                {
+                    succeeded++;
+                }
+                else
+                {
+                    failed++;
+                    foreach (var failure in outcome.Failures)
+                        DebugLog($"  - {failure}");
+                }
             }
             catch (OperationCanceledException)
             {
-                DebugLog("Cancelled!");
                 break;
             }
             catch (Exception ex)
@@ -280,10 +303,10 @@ public partial class Form1 : Form
             DebugLog($"\r\nDone ({succeeded} of {total} files extracted)");
     }
 
-    private static FileSelection? BuildFileSelection(TreeNode fileNode)
+    internal static FileSelection? BuildFileSelection(TreeNode fileNode)
     {
         var trackIds = new HashSet<int>();
-        bool attachments = false, tags = false, cuesheet = false, timestamps = false;
+        bool attachments = false, tags = false, cuesheet = false, timestamps = false, cuesForSelectedTracks = false;
         var chapterIds = new HashSet<int>();
 
         foreach (TreeNode child in fileNode.Nodes)
@@ -310,14 +333,15 @@ public partial class Form1 : Form
                     timestamps = true;
                     break;
                 case SelectionKind.CuesForSelectedTracks:
+                    cuesForSelectedTracks = true;
                     break;
             }
         }
 
-        if (trackIds.Count == 0 && !attachments && chapterIds.Count == 0 && !tags && !cuesheet && !timestamps)
+        if (trackIds.Count == 0 && !attachments && chapterIds.Count == 0 && !tags && !cuesheet && !timestamps && !cuesForSelectedTracks)
             return null;
 
-        return new FileSelection(trackIds, attachments, chapterIds, tags, cuesheet, timestamps);
+        return new FileSelection(trackIds, attachments, chapterIds, tags, cuesheet, timestamps, cuesForSelectedTracks);
     }
 
     private List<(ImportedFile File, ExtractRequest Request)> SnapshotExtractRequests()
@@ -397,19 +421,48 @@ public partial class Form1 : Form
         if (!p.IsComplete) DebugLogProgress(p.StatusText);
     }
 
-    private async Task RunExclusiveAsync(Func<CancellationToken, Task> op)
+    private async Task RunExclusiveAsync(string statusText, Func<CancellationToken, Task> op)
     {
-        if (_activeOperation != null) return;
-        _perOpCts?.Cancel();
-        _perOpCts?.Dispose();
-        _perOpCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
-        var ct = _perOpCts.Token;
-        try
+        if (_activeOperation != null)
         {
-            _activeOperation = op(ct);
-            await _activeOperation;
+            // Busy: keep the latest request, run it as soon as the active operation finishes.
+            _pendingOperation = (statusText, op);
+            return;
         }
-        finally { _activeOperation = null; }
+
+        while (true)
+        {
+            if (_isClosing) break;
+
+            _pendingOperation = null;
+            _perOpCts?.Dispose();
+            _perOpCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+            var ct = _perOpCts.Token;
+
+            SetStatus(statusText);
+            try
+            {
+                _activeOperation = op(ct);
+                await _activeOperation;
+            }
+            finally
+            {
+                _activeOperation = null;
+            }
+
+            var next = _pendingOperation;
+            if (next is null) break;
+            statusText = next.Value.Status;
+            op = next.Value.Op;
+        }
+
+        SetStatus("");
+    }
+
+    private void SetStatus(string text)
+    {
+        if (_isClosing || IsDisposed) return;
+        _statusLabel.Text = text;
     }
 
     private void BtnAbout_Click(object? sender, EventArgs e)
@@ -428,11 +481,14 @@ public partial class Form1 : Form
     private void Form1_FormClosing(object? sender, FormClosingEventArgs e)
     {
         _isClosing = true;
+        _pendingOperation = null;
         _lifetimeCts.Cancel();
     }
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        _perOpCts?.Dispose();
+        _perOpCts = null;
         _lifetimeCts.Dispose();
         base.OnFormClosed(e);
     }

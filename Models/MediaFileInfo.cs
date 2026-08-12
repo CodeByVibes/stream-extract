@@ -28,7 +28,8 @@ public sealed record ExtractRequest(
     MediaFileInfo Source, string OutputDirectory,
     HashSet<int> SelectedTrackIds, HashSet<int> SelectedChapterIds,
     bool ExtractAttachments, bool ExtractTags,
-    bool ExtractCueSheets, bool ExtractTimestamps);
+    bool ExtractCueSheets, bool ExtractTimestamps,
+    bool ExtractCuesForSelectedTracks);
 
 public sealed record ExtractionProgress(
     string CurrentFile, string CurrentItem, int Percentage,

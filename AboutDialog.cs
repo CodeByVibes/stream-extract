@@ -14,7 +14,7 @@ public sealed partial class AboutDialog : Form
         InitializeComponent();
 
         var version = Assembly.GetExecutingAssembly().GetName().Version;
-        var versionString = $"{version!.Major}.{version.Minor}";
+        var versionString = version is null ? "?" : $"{version.Major}.{version.Minor}";
         lblAbout.Text = $"StreamExtract v{versionString}";
 
         var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("StreamExtract.Resources.app_logo.png");
