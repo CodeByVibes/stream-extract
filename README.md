@@ -13,15 +13,17 @@ directly — no shell, no scripting.
 
 - Extract audio, video, and subtitle tracks from MKV/MKA and MP4/M4V/M4A/M4B
   files
-- Extract chapters, attachments, tags, cue sheets, and timestamp files from
-  MKV containers
+- Extract chapters, attachments, tags, cue sheets, timestamp files, and
+  per-track cue sheets from MKV containers
 - Drag-and-drop multiple files or pick them with the file dialog
 - Per-file track and feature selection with a checkbox tree
-- Sequential, progress-tracked extraction (one native tool invocation per
-  mode)
+- Sequential, progress-tracked extraction
 - Output paths are validated and contained — untrusted attachment names cannot
   escape the output directory
-- Startup validation that fails closed when a bundled tool is missing
+- Startup validation that fails closed when a bundled tool is missing or does
+  not match its expected SHA-256 hash
+- Checks for updates on startup and shows a button linking to the download
+  page when a newer version is available
 
 ## Prerequisites
 
@@ -55,9 +57,10 @@ The build copies `tools/` and `licenses/` into the output directory. Launch the
 app from there, or run the produced `stream-extract-winforms.exe`.
 
 > [!NOTE]
-> If you delete or relocate a bundled tool, the app refuses to start and lists
-> the missing executables with their expected paths. Keep the `tools/` folder
-> next to the executable.
+> If you delete or relocate a bundled tool — or replace it with one whose
+> SHA-256 hash does not match — the app refuses to start and reports the
+> problem. Keep the `tools/` folder next to the executable and leave the
+> bundled executables untouched.
 
 ## Usage
 
@@ -78,11 +81,14 @@ Supported extraction options per file type:
 | Attachments | yes | no |
 | Tags | yes | no |
 | Cue sheets | yes | no |
+| Cues for selected tracks | yes | no |
 | Timestamps | yes | no |
 
 Output naming follows the source file name. For example, extracting a video
 track from `movie.mkv` writes `movie_Track1.h264` into the output folder;
-chapters write `movie_chapters.xml`; attachments keep their original names.
+chapters write `movie_chapters.xml`; timestamps write
+`movie_Track1_timestamps.txt`; cue sheets for selected tracks write
+`movie_Track1_cues.cue`; attachments keep their original names.
 
 ## Development
 
@@ -101,8 +107,10 @@ dotnet test
 ```
 
 Tests are headless xUnit tests targeting the pure helpers — path containment,
-request building, plugin command builders, and the process failure/cancellation
-contracts. No native tools are invoked during tests.
+request building, selection snapshotting, cue sheet generation, progress math,
+plugin command builders, update parsing, and the process failure/cancellation
+contracts. The bundled native tools are never invoked during tests; the process
+contracts are exercised against `cmd.exe`.
 
 ## Architecture
 
@@ -113,9 +121,10 @@ The solution is split into three layers:
   `TreeNode.Tag` values into immutable `ImportedFile`/`FileSelection` records.
 - **`Plugins/`** — `IExtractorPlugin` implementations (`MkvExtractorPlugin`,
   `Mp4ExtractorPlugin`) that analyze files and build per-mode native-tool
-  commands.
+  commands, registered by extension in `PluginRegistry`.
 - **`Services/`** — `IProcessRunner`/`ProcessRunner` (process execution with
-  kill-on-cancel and throw-on-non-zero-exit), `OutputPathGuard` (path
+  kill-on-cancel and throw-on-non-zero-exit), `ExternalToolException` (tool
+  failures with exit code and captured output), `OutputPathGuard` (path
   containment), `ExtractionRequestBuilder` (selection to request mapping), and
   `UpdateChecker`/`BrowserLauncher`.
 
@@ -128,7 +137,11 @@ Key design decisions:
   so a malicious file name inside an MKV cannot escape the selected output
   directory.
 - One `mkvextract` invocation per extraction mode keeps failures attributable
-  and matches the tool's command syntax.
+  and matches the tool's command syntax. The exception is per-track cue sheets,
+  which are generated from the extracted chapter XML instead of calling
+  `mkvextract`'s cuesheet mode (that mode has no per-track option).
+- At startup the app verifies the SHA-256 hash of every bundled tool and
+  refuses to start if one is missing or modified.
 
 ## Contributing
 
