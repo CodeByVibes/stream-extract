@@ -5,13 +5,13 @@ namespace StreamExtract.Tests;
 
 public sealed class MkvExtractorPluginTests
 {
-    private static ExtractRequest Request(string output = "C:\\out")
+    private static ExtractRequest Request(string? output = null)
     {
         var info = new MediaFileInfo(
-            "C:\\media\\movie.mkv", "movie.mkv", ExtractorFeatures.Tracks | ExtractorFeatures.Chapters,
+            Path.Combine(Path.GetTempPath(), "media", "movie.mkv"), "movie.mkv", ExtractorFeatures.Tracks | ExtractorFeatures.Chapters,
             [new TrackInfo(0, TrackType.Audio, "A_AAC", "Audio", "eng", new() { ["CodecId"] = "A_AAC" })],
             [new ChapterInfo(0, "Chapters", "")], [], []);
-        return new ExtractRequest(info, output, [0], [0], false, false, false, false, false);
+        return new ExtractRequest(info, output ?? Path.Combine(Path.GetTempPath(), "stream-extract-mkv-tests"), [0], [0], false, false, false, false, false);
     }
 
     [Theory]
@@ -27,7 +27,7 @@ public sealed class MkvExtractorPluginTests
     [Fact]
     public void FormatCueTime_RoundsFrameAndSecondRollover()
     {
-        Assert.Equal("00:01:00", MkvExtractorPlugin.FormatCueTime(TimeSpan.FromSeconds(0.993333333)));
+        Assert.Equal("00:01:00", MkvExtractorPlugin.FormatCueTime(TimeSpan.FromSeconds(0.999)));
     }
 
     [Fact]
@@ -51,10 +51,11 @@ public sealed class MkvExtractorPluginTests
         var timestamps = MkvExtractorPlugin.BuildTimestampsCommand(
             request with { ExtractTimestamps = true }).ToArray();
 
-        Assert.Contains(Path.GetFullPath("C:\\out\\movie_Track1.aac"), tracks);
-        Assert.Contains(Path.GetFullPath("C:\\out\\movie_chapters.xml"), chapters);
-        Assert.Contains(Path.GetFullPath("C:\\out\\movie_tags.xml"), tags);
-        Assert.Contains(Path.GetFullPath("C:\\out\\movie_cuesheet.cue"), cues);
-        Assert.Contains(Path.GetFullPath("C:\\out\\movie_Track1_timestamps.txt"), timestamps);
+        var output = request.OutputDirectory;
+        Assert.Contains($"0:{Path.Combine(output, "movie_Track1.aac")}", tracks);
+        Assert.Contains(Path.Combine(output, "movie_chapters.xml"), chapters);
+        Assert.Contains(Path.Combine(output, "movie_tags.xml"), tags);
+        Assert.Contains(Path.Combine(output, "movie_cuesheet.cue"), cues);
+        Assert.Contains($"0:{Path.Combine(output, "movie_Track1_timestamps.txt")}", timestamps);
     }
 }

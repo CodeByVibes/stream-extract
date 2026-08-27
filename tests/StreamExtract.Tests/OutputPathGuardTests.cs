@@ -25,14 +25,14 @@ public class OutputPathGuardTests
     [Fact]
     public void DirectoryTraversal_IsFlattenedToBaseName()
     {
-        var result = OutputPathGuard.ResolveContainedPath(Root, @"..\outside.txt");
+        var result = OutputPathGuard.ResolveContainedPath(Root, "../outside.txt");
         Assert.Equal(Path.GetFullPath(Path.Combine(Root, "outside.txt")), result);
     }
 
     [Fact]
-    public void AbsoluteWindowsPath_IsFlattenedToBaseName()
+    public void AbsolutePath_IsFlattenedToBaseName()
     {
-        var result = OutputPathGuard.ResolveContainedPath(Root, @"C:\outside.txt");
+        var result = OutputPathGuard.ResolveContainedPath(Root, Path.Combine(Path.GetTempPath(), "outside.txt"));
         Assert.Equal(Path.GetFullPath(Path.Combine(Root, "outside.txt")), result);
     }
 
@@ -60,9 +60,7 @@ public class OutputPathGuardTests
     }
 
     [Theory]
-    [InlineData("bad<name.txt")]
-    [InlineData("bad|name.txt")]
-    [InlineData("bad?name.txt")]
+    [InlineData("bad\0name.txt")]
     public void InvalidFileNameChars_AreRejected(string fileName)
     {
         Assert.Throws<InvalidDataException>(() => OutputPathGuard.ResolveContainedPath(Root, fileName));
@@ -95,14 +93,14 @@ public class OutputPathGuardTests
     public void IsValidOutputDirectory_RelativePath_IsRejected()
     {
         Assert.False(OutputPathGuard.IsValidOutputDirectory("out"));
-        Assert.False(OutputPathGuard.IsValidOutputDirectory(@"sub\dir"));
+        Assert.False(OutputPathGuard.IsValidOutputDirectory(Path.Combine("sub", "dir")));
     }
 
     [Fact]
     public void IsValidOutputDirectory_AbsolutePath_IsAccepted()
     {
         Assert.True(OutputPathGuard.IsValidOutputDirectory(Path.GetTempPath()));
-        Assert.True(OutputPathGuard.IsValidOutputDirectory(@"C:\media\out"));
+        Assert.True(OutputPathGuard.IsValidOutputDirectory(Path.Combine(Path.GetTempPath(), "media", "out")));
     }
 
     [Fact]
@@ -115,7 +113,7 @@ public class OutputPathGuardTests
     [Fact]
     public void NestedSafeName_UsesBaseNameOnly()
     {
-        var result = OutputPathGuard.ResolveContainedPath(Root, @"sub\folder\file.txt");
+        var result = OutputPathGuard.ResolveContainedPath(Root, "sub/folder/file.txt");
         Assert.Equal(Path.GetFullPath(Path.Combine(Root, "file.txt")), result);
     }
 

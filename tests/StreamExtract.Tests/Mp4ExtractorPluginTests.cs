@@ -85,9 +85,9 @@ public class Mp4ExtractorPluginTests
         // mp4box (GPAC) writes "-info" output to stderr, stdout stays empty.
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", SampleInfo);
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(Path.GetTempPath(), runner);
 
-        var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
+        var info = await plugin.AnalyzeFileAsync(Path.Combine(Path.GetTempPath(), "media", "movie.mp4"));
 
         Assert.Equal(2, info.Tracks.Count);
         Assert.Equal(1, info.Tracks[0].Id);
@@ -105,9 +105,9 @@ public class Mp4ExtractorPluginTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", RealInfoOutput);
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(Path.GetTempPath(), runner);
 
-        var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
+        var info = await plugin.AnalyzeFileAsync(Path.Combine(Path.GetTempPath(), "media", "movie.mp4"));
 
         Assert.Equal(2, info.Tracks.Count);
         Assert.Equal(1, info.Tracks[0].Id);
@@ -227,11 +227,11 @@ public class Mp4ExtractorPluginTests
     public void BuildRawOutputName_UsesCodecExtension()
     {
         var info = new MediaFileInfo(
-            @"C:\media\movie.mp4", "movie.mp4",
+            Path.Combine(Path.GetTempPath(), "media", "movie.mp4"), "movie.mp4",
             ExtractorFeatures.Tracks,
             [new TrackInfo(1, TrackType.Video, "avc1", "Track 1", "und", new() { ["CodecId"] = "avc1" })],
             [], [], []);
-        var req = new ExtractRequest(info, @"D:\out", [1], [], false, false, false, false, false);
+        var req = new ExtractRequest(info, Path.Combine(Path.GetTempPath(), "out"), [1], [], false, false, false, false, false);
 
         Assert.Equal("movie_Track2.h264", Mp4ExtractorPlugin.BuildRawOutputName(req, 1));
     }

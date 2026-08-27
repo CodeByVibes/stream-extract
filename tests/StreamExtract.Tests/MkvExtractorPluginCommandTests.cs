@@ -6,12 +6,14 @@ namespace StreamExtract.Tests;
 
 public class MkvExtractorPluginCommandTests
 {
+    private static string OutputDirectory => Path.Combine(Path.GetTempPath(), "stream-extract-command-tests");
+
     private static ExtractRequest MakeRequest(
         bool tracks = true, bool attachments = false, bool tags = false,
         bool cueSheets = false, bool timestamps = false, bool chapters = false)
     {
         var info = new MediaFileInfo(
-            @"C:\media\movie.mkv", "movie.mkv",
+            Path.Combine(Path.GetTempPath(), "media", "movie.mkv"), "movie.mkv",
             ExtractorFeatures.Tracks | ExtractorFeatures.Attachments | ExtractorFeatures.Tags |
             ExtractorFeatures.CueSheets | ExtractorFeatures.Timestamps,
             [new TrackInfo(0, TrackType.Video, "V_MPEG4/ISO/AVC", "Main", "eng",
@@ -19,7 +21,7 @@ public class MkvExtractorPluginCommandTests
             chapters ? [new ChapterInfo(0, "C1", "")] : [],
             [new AttachmentInfo(1, "font.ttf", "font/ttf", 1000)],
             []);
-        return new ExtractRequest(info, @"D:\out",
+        return new ExtractRequest(info, OutputDirectory,
             tracks ? [0] : [], chapters ? [0] : [], attachments, tags, cueSheets, timestamps, false);
     }
 
@@ -29,7 +31,7 @@ public class MkvExtractorPluginCommandTests
         var req = MakeRequest();
         var args = MkvExtractorPlugin.BuildTracksCommand(req).ToArray();
         Assert.Equal("tracks", args[1]);
-        Assert.Contains("0:D:\\out\\movie_Track1.h264", args);
+        Assert.Contains($"0:{Path.Combine(OutputDirectory, "movie_Track1.h264")}", args);
     }
 
     [Fact]
@@ -38,7 +40,7 @@ public class MkvExtractorPluginCommandTests
         var req = MakeRequest(tracks: false, chapters: true);
         var args = MkvExtractorPlugin.BuildChaptersCommand(req).ToArray();
         Assert.Equal("chapters", args[1]);
-        Assert.Contains("D:\\out\\movie_chapters.xml", args);
+        Assert.Contains(Path.Combine(OutputDirectory, "movie_chapters.xml"), args);
     }
 
     [Fact]
@@ -47,7 +49,7 @@ public class MkvExtractorPluginCommandTests
         var req = MakeRequest(attachments: true);
         var (args, failures) = MkvExtractorPlugin.BuildAttachmentsCommand(req);
         Assert.Equal("attachments", args[1]);
-        Assert.Contains("1:D:\\out\\font.ttf", args);
+        Assert.Contains($"1:{Path.Combine(OutputDirectory, "font.ttf")}", args);
         Assert.Empty(failures);
     }
 
@@ -55,22 +57,22 @@ public class MkvExtractorPluginCommandTests
     public void AttachmentsCommand_TraversalFileName_IsFlattened()
     {
         var info = new MediaFileInfo(
-            @"C:\media\movie.mkv", "movie.mkv",
+            Path.Combine(Path.GetTempPath(), "media", "movie.mkv"), "movie.mkv",
             ExtractorFeatures.Attachments,
-            [], [], [new AttachmentInfo(1, @"..\..\evil.ttf", "font/ttf", 1000)], []);
-        var req = new ExtractRequest(info, @"D:\out", [], [], true, false, false, false, false);
+            [], [], [new AttachmentInfo(1, "../../evil.ttf", "font/ttf", 1000)], []);
+        var req = new ExtractRequest(info, OutputDirectory, [], [], true, false, false, false, false);
         var (args, _) = MkvExtractorPlugin.BuildAttachmentsCommand(req);
-        Assert.Contains("1:D:\\out\\evil.ttf", args);
+        Assert.Contains($"1:{Path.Combine(OutputDirectory, "evil.ttf")}", args);
     }
 
     [Fact]
     public void AttachmentsCommand_DeviceName_IsSkippedWithFailure()
     {
         var info = new MediaFileInfo(
-            @"C:\media\movie.mkv", "movie.mkv",
+            Path.Combine(Path.GetTempPath(), "media", "movie.mkv"), "movie.mkv",
             ExtractorFeatures.Attachments,
             [], [], [new AttachmentInfo(1, "CON", "font/ttf", 1000)], []);
-        var req = new ExtractRequest(info, @"D:\out", [], [], true, false, false, false, false);
+        var req = new ExtractRequest(info, OutputDirectory, [], [], true, false, false, false, false);
         var (args, failures) = MkvExtractorPlugin.BuildAttachmentsCommand(req);
         Assert.DoesNotContain(args, a => a.StartsWith("1:"));
         Assert.Single(failures);
@@ -80,14 +82,14 @@ public class MkvExtractorPluginCommandTests
     public void AttachmentsCommand_MixedValidAndInvalid_KeepsValidSkipsInvalid()
     {
         var info = new MediaFileInfo(
-            @"C:\media\movie.mkv", "movie.mkv",
+            Path.Combine(Path.GetTempPath(), "media", "movie.mkv"), "movie.mkv",
             ExtractorFeatures.Attachments,
             [], [],
             [new AttachmentInfo(1, "good.ttf", "font/ttf", 1000), new AttachmentInfo(2, "NUL", "font/ttf", 1000)],
             []);
-        var req = new ExtractRequest(info, @"D:\out", [], [], true, false, false, false, false);
+        var req = new ExtractRequest(info, OutputDirectory, [], [], true, false, false, false, false);
         var (args, failures) = MkvExtractorPlugin.BuildAttachmentsCommand(req);
-        Assert.Contains("1:D:\\out\\good.ttf", args);
+        Assert.Contains($"1:{Path.Combine(OutputDirectory, "good.ttf")}", args);
         Assert.DoesNotContain(args, a => a.StartsWith("2:"));
         Assert.Single(failures);
     }
@@ -96,7 +98,7 @@ public class MkvExtractorPluginCommandTests
     public void AttachmentsCommand_DuplicateNamesCaseInsensitive_SkipsLaterDuplicate()
     {
         var info = new MediaFileInfo(
-            @"C:\media\movie.mkv", "movie.mkv",
+            Path.Combine(Path.GetTempPath(), "media", "movie.mkv"), "movie.mkv",
             ExtractorFeatures.Attachments,
             [], [],
             [new AttachmentInfo(1, "font.ttf", "font/ttf", 1000), new AttachmentInfo(2, "FONT.TTF", "font/ttf", 1000)],
@@ -116,7 +118,7 @@ public class MkvExtractorPluginCommandTests
         var req = MakeRequest(tags: true);
         var args = MkvExtractorPlugin.BuildTagsCommand(req).ToArray();
         Assert.Equal("tags", args[1]);
-        Assert.Contains("D:\\out\\movie_tags.xml", args);
+        Assert.Contains(Path.Combine(OutputDirectory, "movie_tags.xml"), args);
     }
 
     [Fact]
@@ -125,7 +127,7 @@ public class MkvExtractorPluginCommandTests
         var req = MakeRequest(cueSheets: true);
         var args = MkvExtractorPlugin.BuildCueSheetsCommand(req).ToArray();
         Assert.Equal("cuesheet", args[1]);
-        Assert.Contains("D:\\out\\movie_cuesheet.cue", args);
+        Assert.Contains(Path.Combine(OutputDirectory, "movie_cuesheet.cue"), args);
     }
 
     [Fact]
@@ -134,19 +136,19 @@ public class MkvExtractorPluginCommandTests
         var req = MakeRequest(timestamps: true);
         var args = MkvExtractorPlugin.BuildTimestampsCommand(req).ToArray();
         Assert.Equal("timestamps_v2", args[1]);
-        Assert.Contains("0:D:\\out\\movie_Track1_timestamps.txt", args);
+        Assert.Contains($"0:{Path.Combine(OutputDirectory, "movie_Track1_timestamps.txt")}", args);
     }
 
     [Fact]
     public void TimestampsCommand_MissingTrackId_IsSkipped()
     {
         var info = new MediaFileInfo(
-            @"C:\media\movie.mkv", "movie.mkv",
+            Path.Combine(Path.GetTempPath(), "media", "movie.mkv"), "movie.mkv",
             ExtractorFeatures.Timestamps,
             [new TrackInfo(0, TrackType.Video, "V_MPEG4/ISO/AVC", "Main", "eng",
                 new() { ["CodecId"] = "V_MPEG4/ISO/AVC" })],
             [], [], []);
-        var req = new ExtractRequest(info, @"D:\out", [0, 99], [], false, false, false, true, false);
+        var req = new ExtractRequest(info, OutputDirectory, [0, 99], [], false, false, false, true, false);
         var args = MkvExtractorPlugin.BuildTimestampsCommand(req).ToArray();
         Assert.Single(args, a => a.StartsWith("0:"));
         Assert.DoesNotContain(args, a => a.StartsWith("99:"));

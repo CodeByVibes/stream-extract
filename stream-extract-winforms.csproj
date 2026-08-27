@@ -18,7 +18,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="StreamExtract.Tests" />
+    <InternalsVisibleTo Include="StreamExtract.WinForms.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="StreamExtract.Core\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="StreamExtract.Core\StreamExtract.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

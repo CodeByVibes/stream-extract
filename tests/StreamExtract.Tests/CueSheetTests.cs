@@ -69,7 +69,7 @@ public class CueSheetTests
         Assert.Contains("    TITLE \"Intro\"", cue);
         Assert.Contains("    INDEX 01 00:00:00", cue);
         Assert.Contains("  TRACK 03 AUDIO", cue);
-        Assert.Contains("    INDEX 01 00:01:01", cue); // 00:01:00.5 rounds to 00:01:01
+        Assert.Contains("    INDEX 01 01:00:38", cue); // CUE uses total minutes and 75 frames per second.
     }
 
     [Fact]
@@ -91,10 +91,10 @@ public class CueSheetTests
 
     [Theory]
     [InlineData("00:00:00.000000000", "00:00:00")]
-    [InlineData("00:00:05.000000000", "00:00:05")]
-    [InlineData("00:01:00.500000000", "00:01:01")]
-    [InlineData("00:00:59.700000000", "00:01:00")]
-    [InlineData("01:02:03.000000000", "01:02:03")]
+    [InlineData("00:00:05.000000000", "00:05:00")]
+    [InlineData("00:01:00.500000000", "01:00:38")]
+    [InlineData("00:00:59.700000000", "00:59:53")]
+    [InlineData("01:02:03.000000000", "62:03:00")]
     public void FormatCueTime_RoundsToNearestSecond(string raw, string expected)
     {
         var chapters = MkvExtractorPlugin.ParseChapterXml(

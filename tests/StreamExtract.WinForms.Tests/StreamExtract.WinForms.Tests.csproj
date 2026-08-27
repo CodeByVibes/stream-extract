@@ -1,15 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Windows shell integration is deferred until the portable runner fixture in Task 3. -->
-    <Compile Remove="ProcessRunnerTests.cs" />
+    <Using Include="Xunit" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,7 +22,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\StreamExtract.Core\StreamExtract.Core.csproj" />
+    <ProjectReference Include="..\..\stream-extract-winforms.csproj" />
   </ItemGroup>
 
 </Project>
