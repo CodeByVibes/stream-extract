@@ -70,7 +70,7 @@ public class MkvExtractorPluginAnalyzeTests
         }
         """;
 
-    private static MkvExtractorPlugin Plugin(FakeProcessRunner runner) => new(@"C:\tools", runner);
+    private static MkvExtractorPlugin Plugin(FakeProcessRunner runner) => new(new TestNativeToolResolver(), runner);
 
     private static async Task<MediaFileInfo> AnalyzeAsync(string json)
     {
@@ -99,6 +99,22 @@ public class MkvExtractorPluginAnalyzeTests
         Assert.Equal("Global", info.Tags[0].Name);
         Assert.Empty(info.Chapters);
         Assert.Empty(info.Attachments);
+    }
+
+    [Fact]
+    public async Task AnalyzeFileAsync_UsesResolverExecutablePath()
+    {
+        var resolver = new TestNativeToolResolver();
+        var runner = new FakeProcessRunner();
+        runner.AddResult(0, "{}", "");
+
+        await new MkvExtractorPlugin(resolver, runner).AnalyzeFileAsync(@"C:\media\movie.mkv");
+
+        var call = Assert.Single(runner.Calls);
+        Assert.Equal(resolver.Resolve(NativeToolId.MkvMerge), call.FileName);
+        Assert.True(Path.IsPathFullyQualified(call.FileName));
+        Assert.Equal([@"C:\media\movie.mkv", "-i", "-F", "json"], call.Arguments);
+        Assert.Null(call.WorkingDirectory);
     }
 
     [Fact]

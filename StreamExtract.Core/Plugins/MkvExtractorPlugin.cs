@@ -8,9 +8,18 @@ using StreamExtract.Services;
 
 namespace StreamExtract.Plugins;
 
-public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? runner = null) : IExtractorPlugin
+public sealed partial class MkvExtractorPlugin : IExtractorPlugin
 {
-    private readonly IProcessRunner _runner = runner ?? new ProcessRunner(toolPath);
+    private readonly string _mergeTool;
+    private readonly string _extractTool;
+    private readonly IProcessRunner _runner;
+
+    public MkvExtractorPlugin(INativeToolResolver resolver, IProcessRunner? runner = null)
+    {
+        _mergeTool = resolver.Resolve(NativeToolId.MkvMerge);
+        _extractTool = resolver.Resolve(NativeToolId.MkvExtract);
+        _runner = runner ?? new ProcessRunner(Path.GetDirectoryName(_extractTool)!);
+    }
 
     private static readonly HashSet<string> _exts = new(StringComparer.OrdinalIgnoreCase) { ".mkv", ".mka" };
 
@@ -21,7 +30,7 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
 
     public async Task<MediaFileInfo> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
-        var result = await _runner.RunAsync("mkvmerge.exe", new[] { filePath, "-i", "-F", "json" }, ct);
+        var result = await _runner.RunAsync(_mergeTool, new[] { filePath, "-i", "-F", "json" }, ct);
         var raw = JsonSerializer.Deserialize<MkvJsonRoot>(result.StandardOutput)
             ?? throw new InvalidOperationException("Failed to parse mkvmerge JSON.");
 
@@ -134,7 +143,7 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
             var overall = Math.Clamp((modeIndex * 100 + p.Percentage) / modeCount, 0, 100);
             progress.Report(new ExtractionProgress("", "", overall, $"Extracting... {overall}%", false));
         });
-        return _runner.RunWithProgressAsync("mkvextract.exe", args, ParseProgress, aggregate, ct);
+        return _runner.RunWithProgressAsync(_extractTool, args, ParseProgress, aggregate, ct);
     }
 
     /// <summary>

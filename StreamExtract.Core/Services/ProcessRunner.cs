@@ -114,7 +114,7 @@ public sealed class ProcessRunner(string toolPath) : IProcessRunner
         {
             StartInfo = new ProcessStartInfo
             {
-                FileName = Path.Combine(toolPath, fileName),
+                FileName = Path.IsPathRooted(fileName) ? fileName : Path.Combine(toolPath, fileName),
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,

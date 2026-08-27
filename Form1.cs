@@ -84,8 +84,8 @@ public partial class Form1 : Form
 
     private void SetupPlugins()
     {
-        _pluginRegistry.Register(new MkvExtractorPlugin(Program.ToolPath));
-        _pluginRegistry.Register(new Mp4ExtractorPlugin(Program.ToolPath));
+        _pluginRegistry.Register(new MkvExtractorPlugin(Program.ToolResolver));
+        _pluginRegistry.Register(new Mp4ExtractorPlugin(Program.ToolResolver));
     }
 
     private void WireEvents()

@@ -1,5 +1,6 @@
 using StreamExtract.Models;
 using StreamExtract.Plugins;
+using StreamExtract.Services;
 
 namespace StreamExtract.Tests;
 
@@ -57,5 +58,33 @@ public sealed class MkvExtractorPluginTests
         Assert.Contains(Path.Combine(output, "movie_tags.xml"), tags);
         Assert.Contains(Path.Combine(output, "movie_cuesheet.cue"), cues);
         Assert.Contains($"0:{Path.Combine(output, "movie_Track1_timestamps.txt")}", timestamps);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_UsesResolverExecutableAndWorkingDirectory()
+    {
+        var resolver = new TestNativeToolResolver();
+        var runner = new FakeProcessRunner();
+        runner.AddResult(0, "progress 100%", "");
+        var plugin = new MkvExtractorPlugin(resolver, runner);
+        var output = Path.Combine(Path.GetTempPath(), "stream-extract-mkv-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(output);
+        var request = Request(output) with { SelectedChapterIds = [] };
+
+        try
+        {
+            var outcome = await plugin.ExtractAsync(request, new Progress<ExtractionProgress>());
+
+            Assert.True(outcome.Succeeded);
+            var call = Assert.Single(runner.Calls);
+            Assert.Equal(resolver.Resolve(NativeToolId.MkvExtract), call.FileName);
+            Assert.True(Path.IsPathFullyQualified(call.FileName));
+            Assert.Equal(MkvExtractorPlugin.BuildTracksCommand(request).ToArray(), call.Arguments);
+            Assert.Null(call.WorkingDirectory);
+        }
+        finally
+        {
+            Directory.Delete(output, true);
+        }
     }
 }

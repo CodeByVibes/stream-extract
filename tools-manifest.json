@@ -1,0 +1,28 @@
+{
+  "tools": [
+    {
+      "id": "MkvMerge",
+      "filename": "mkvmerge.exe",
+      "version": "1.0.0",
+      "rid": "win-x64",
+      "source": "Windows bundle",
+      "sha256": "53698c4cac3ed89cfed2376115ab4ebaf52c4e7c298cc0c307ae65a874dce83d"
+    },
+    {
+      "id": "MkvExtract",
+      "filename": "mkvextract.exe",
+      "version": "1.0.0",
+      "rid": "win-x64",
+      "source": "Windows bundle",
+      "sha256": "84d080d6ff767f2d35e3ca9606cf7a7033fde5e3fe7fae30803e92189a7903ea"
+    },
+    {
+      "id": "Mp4Box",
+      "filename": "mp4box.exe",
+      "version": "1.0.0",
+      "rid": "win-x64",
+      "source": "Windows bundle",
+      "sha256": "40da30d87fa2401b1b1934f17bd672ca08f732e55a9e59c2c235541668db22a7"
+    }
+  ]
+}

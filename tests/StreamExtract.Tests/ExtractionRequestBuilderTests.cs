@@ -13,7 +13,7 @@ public class ExtractionRequestBuilderTests
             ExtractorFeatures.Tracks | ExtractorFeatures.Attachments,
             [new TrackInfo(0, TrackType.Video, "V_MPEG4/ISO/AVC", "Main", "eng", new())],
             [], [], []);
-        return new ImportedFile(info.FilePath, new MkvExtractorPlugin(Path.GetTempPath()), info);
+        return new ImportedFile(info.FilePath, new MkvExtractorPlugin(new TestNativeToolResolver()), info);
     }
 
     [Fact]

@@ -85,7 +85,7 @@ public class Mp4ExtractorPluginTests
         // mp4box (GPAC) writes "-info" output to stderr, stdout stays empty.
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", SampleInfo);
-        var plugin = new Mp4ExtractorPlugin(Path.GetTempPath(), runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(Path.Combine(Path.GetTempPath(), "media", "movie.mp4"));
 
@@ -105,7 +105,7 @@ public class Mp4ExtractorPluginTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", RealInfoOutput);
-        var plugin = new Mp4ExtractorPlugin(Path.GetTempPath(), runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(Path.Combine(Path.GetTempPath(), "media", "movie.mp4"));
 
@@ -126,7 +126,7 @@ public class Mp4ExtractorPluginTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", RealInfoOutput);
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
 
@@ -142,7 +142,7 @@ public class Mp4ExtractorPluginTests
         var output = "# Track 1 Info - ID 1\nMedia Type: vide:avc1\nChapter #1 - 00:00:00.000 - \"Intro\"\n";
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", output);
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
 
@@ -164,7 +164,7 @@ public class Mp4ExtractorPluginTests
 
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", output.ToString());
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
 
@@ -177,7 +177,7 @@ public class Mp4ExtractorPluginTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", "# Track 1 Info - ID abc\nMedia Type: vide:avc1\n# Track 2 Info - ID 2\nMedia Type: soun:mp4a\n");
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
 
@@ -190,7 +190,7 @@ public class Mp4ExtractorPluginTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", "");
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
 
@@ -203,7 +203,7 @@ public class Mp4ExtractorPluginTests
         // mp4box writes "-info" to stderr; stdout-only output must not be parsed.
         var runner = new FakeProcessRunner();
         runner.AddResult(0, SampleInfo, "");
-        var plugin = new Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var info = await plugin.AnalyzeFileAsync(@"C:\media\movie.mp4");
 
@@ -234,5 +234,31 @@ public class Mp4ExtractorPluginTests
         var req = new ExtractRequest(info, Path.Combine(Path.GetTempPath(), "out"), [1], [], false, false, false, false, false);
 
         Assert.Equal("movie_Track2.h264", Mp4ExtractorPlugin.BuildRawOutputName(req, 1));
+    }
+
+    [Fact]
+    public async Task ResolverPluginRunner_UsesAbsoluteBundledToolAndExtractionPaths()
+    {
+        var resolver = new TestNativeToolResolver();
+        var runner = new FakeProcessRunner();
+        runner.AddResult(0, "", "");
+        var plugin = new Mp4ExtractorPlugin(resolver, runner);
+        var source = new MediaFileInfo(
+            Path.Combine(Path.GetTempPath(), "media", "movie.mp4"), "movie.mp4", ExtractorFeatures.Tracks,
+            [new TrackInfo(1, TrackType.Video, "avc1", "Track 1", "und", new() { ["CodecId"] = "avc1" })],
+            [], [], []);
+        var output = Path.Combine(Path.GetTempPath(), "stream-extract-output", Guid.NewGuid().ToString("N"));
+        var request = new ExtractRequest(source, output, [1], [], false, false, false, false, false);
+
+        var outcome = await plugin.ExtractAsync(request, new Progress<ExtractionProgress>());
+
+        Assert.True(outcome.Succeeded);
+        var call = Assert.Single(runner.Calls);
+        Assert.Equal(resolver.Resolve(NativeToolId.Mp4Box), call.FileName);
+        Assert.Equal(["-raw", "1:output=" + Path.Combine(output, "movie_Track2.h264"), source.FilePath], call.Arguments);
+        Assert.Equal(output, call.WorkingDirectory);
+        Assert.True(Path.IsPathFullyQualified(call.FileName));
+        Assert.True(Path.IsPathFullyQualified(source.FilePath));
+        Assert.True(Path.IsPathFullyQualified(output));
     }
 }

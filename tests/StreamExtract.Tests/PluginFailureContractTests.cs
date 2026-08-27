@@ -27,7 +27,7 @@ public class PluginFailureContractTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(2, "progress 50%", "boom");
-        var plugin = new Plugins.MkvExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.MkvExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var outcome = await plugin.ExtractAsync(MakeRequest(), new Progress<ExtractionProgress>());
 
@@ -40,7 +40,7 @@ public class PluginFailureContractTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(1, "", "mp4box exploded");
-        var plugin = new Plugins.Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var outcome = await plugin.ExtractAsync(MakeRequest(), new Progress<ExtractionProgress>());
 
@@ -53,7 +53,7 @@ public class PluginFailureContractTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "progress 100%", "");
-        var plugin = new Plugins.MkvExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.MkvExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var outcome = await plugin.ExtractAsync(MakeRequest(), new Progress<ExtractionProgress>());
 
@@ -66,7 +66,7 @@ public class PluginFailureContractTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", "");
-        var plugin = new Plugins.Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var outcome = await plugin.ExtractAsync(MakeRequest(), new Progress<ExtractionProgress>());
 
@@ -79,7 +79,7 @@ public class PluginFailureContractTests
         var runner = new FakeProcessRunner();
         runner.AddResult(2, "", "tracks boom");    // tracks mode fails
         runner.AddResult(0, "progress 100%", "");  // chapters mode still runs
-        var plugin = new Plugins.MkvExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.MkvExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var outcome = await plugin.ExtractAsync(MakeRequest(chapters: true), new Progress<ExtractionProgress>());
 
@@ -94,7 +94,7 @@ public class PluginFailureContractTests
         var runner = new FakeProcessRunner();
         runner.AddResult(2, "", "first boom");
         runner.AddResult(2, "", "second boom");
-        var plugin = new Plugins.MkvExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.MkvExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var outcome = await plugin.ExtractAsync(MakeRequest(chapters: true), new Progress<ExtractionProgress>());
 
@@ -115,7 +115,7 @@ public class PluginFailureContractTests
 
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "progress 100%", ""); // tracks mode runs; attachments mode is skipped
-        var plugin = new Plugins.MkvExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.MkvExtractorPlugin(new TestNativeToolResolver(), runner);
 
         var outcome = await plugin.ExtractAsync(req, new Progress<ExtractionProgress>());
 
@@ -129,7 +129,7 @@ public class PluginFailureContractTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "progress 50%", "");
-        var plugin = new Plugins.MkvExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.MkvExtractorPlugin(new TestNativeToolResolver(), runner);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
@@ -142,7 +142,7 @@ public class PluginFailureContractTests
     {
         var runner = new FakeProcessRunner();
         runner.AddResult(0, "", "");
-        var plugin = new Plugins.Mp4ExtractorPlugin(@"C:\tools", runner);
+        var plugin = new Plugins.Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 

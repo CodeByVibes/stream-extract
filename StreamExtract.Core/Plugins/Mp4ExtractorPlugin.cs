@@ -4,9 +4,16 @@ using StreamExtract.Services;
 
 namespace StreamExtract.Plugins;
 
-public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? runner = null) : IExtractorPlugin
+public sealed partial class Mp4ExtractorPlugin : IExtractorPlugin
 {
-    private readonly IProcessRunner _runner = runner ?? new ProcessRunner(toolPath);
+    private readonly string _tool;
+    private readonly IProcessRunner _runner;
+
+    public Mp4ExtractorPlugin(INativeToolResolver resolver, IProcessRunner? runner = null)
+    {
+        _tool = resolver.Resolve(NativeToolId.Mp4Box);
+        _runner = runner ?? new ProcessRunner(Path.GetDirectoryName(_tool)!);
+    }
 
     private static readonly HashSet<string> _exts = new(StringComparer.OrdinalIgnoreCase) { ".mp4", ".m4v", ".m4a", ".m4b" };
 
@@ -32,7 +39,7 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
 
     public async Task<MediaFileInfo> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
-        var result = await _runner.RunAsync("mp4box.exe", new[] { "-info", filePath }, ct);
+        var result = await _runner.RunAsync(_tool, new[] { "-info", filePath }, ct);
         // mp4box (GPAC) writes all console output, including "-info" listings, to stderr.
         var output = result.StandardError;
 
@@ -130,7 +137,7 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
                 total > 0 ? done * 100 / total : 0, $"Extracting track {tid}...", false));
             try
             {
-                await _runner.RunAsync("mp4box.exe",
+                await _runner.RunAsync(_tool,
                     new[] { "-raw", $"{tid}:output={OutputPath(req, BuildRawOutputName(req, tid))}", req.Source.FilePath },
                     ct, req.OutputDirectory);
             }
@@ -153,7 +160,7 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
             try
             {
                 var chapFile = OutputPath(req, $"{fn}_chapters.xml");
-                await _runner.RunAsync("mp4box.exe", new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
+                await _runner.RunAsync(_tool, new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
             }
             catch (OperationCanceledException)
             {

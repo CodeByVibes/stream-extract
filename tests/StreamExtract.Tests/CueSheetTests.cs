@@ -106,7 +106,7 @@ public class CueSheetTests
     [Fact]
     public void BuildModes_IncludesCuesForSelectedTracks_WhenFlaggedWithTracks()
     {
-        var plugin = new MkvExtractorPlugin(@"C:\tools", new FakeProcessRunner());
+        var plugin = new MkvExtractorPlugin(new TestNativeToolResolver(), new FakeProcessRunner());
         var req = new StreamExtract.Models.ExtractRequest(
             MakeInfo(), @"D:\out", [0], [], false, false, false, false, true);
 
@@ -119,7 +119,7 @@ public class CueSheetTests
     [Fact]
     public void BuildModes_OmitsCuesForSelectedTracks_WhenNoTracksSelected()
     {
-        var plugin = new MkvExtractorPlugin(@"C:\tools", new FakeProcessRunner());
+        var plugin = new MkvExtractorPlugin(new TestNativeToolResolver(), new FakeProcessRunner());
         var req = new StreamExtract.Models.ExtractRequest(
             MakeInfo(), @"D:\out", [], [], false, false, false, false, true);
 
