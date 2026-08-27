@@ -260,5 +260,25 @@ public class Mp4ExtractorPluginTests
         Assert.True(Path.IsPathFullyQualified(call.FileName));
         Assert.True(Path.IsPathFullyQualified(source.FilePath));
         Assert.True(Path.IsPathFullyQualified(output));
+        Assert.Equal(default, call.CancellationToken);
+        Assert.Null(call.Timeout);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_PreservesPathsAsSingleArgumentListEntries()
+    {
+        var resolver = new TestNativeToolResolver();
+        var runner = new FakeProcessRunner();
+        runner.AddResult(0, "", "");
+        var sourcePath = Path.Combine(Path.GetTempPath(), "media [test]", "movie;$(touch hacked).mp4");
+        var output = Path.Combine(Path.GetTempPath(), "output folder;$(touch hacked)");
+        var request = new ExtractRequest(new MediaFileInfo(sourcePath, Path.GetFileName(sourcePath),
+            ExtractorFeatures.Tracks, [new TrackInfo(1, TrackType.Video, "avc1", "Track", "und",
+                new() { ["CodecId"] = "avc1" })], [], [], []), output, [1], [], false, false, false, false, false);
+
+        await new Mp4ExtractorPlugin(resolver, runner).ExtractAsync(request, new Progress<ExtractionProgress>());
+
+        Assert.Equal(["-raw", "1:output=" + Path.Combine(output, "movie;$(touch hacked)_Track2.h264"), sourcePath],
+            Assert.Single(runner.Calls).Arguments);
     }
 }

@@ -115,6 +115,8 @@ public class MkvExtractorPluginAnalyzeTests
         Assert.True(Path.IsPathFullyQualified(call.FileName));
         Assert.Equal([@"C:\media\movie.mkv", "-i", "-F", "json"], call.Arguments);
         Assert.Null(call.WorkingDirectory);
+        Assert.Equal(default, call.CancellationToken);
+        Assert.Null(call.Timeout);
     }
 
     [Fact]

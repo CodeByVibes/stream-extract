@@ -81,10 +81,34 @@ public sealed class MkvExtractorPluginTests
             Assert.True(Path.IsPathFullyQualified(call.FileName));
             Assert.Equal(MkvExtractorPlugin.BuildTracksCommand(request).ToArray(), call.Arguments);
             Assert.Null(call.WorkingDirectory);
+            Assert.Equal(default, call.CancellationToken);
+            Assert.Null(call.Timeout);
         }
         finally
         {
             Directory.Delete(output, true);
         }
+    }
+
+    [Fact]
+    public async Task ExtractAsync_PreservesPathsAsSingleArgumentListEntries()
+    {
+        var resolver = new TestNativeToolResolver();
+        var runner = new FakeProcessRunner();
+        runner.AddResult(0, "", "");
+        var sourcePath = Path.Combine(Path.GetTempPath(), "media [test]", "movie;$(touch hacked).mkv");
+        var output = Path.Combine(Path.GetTempPath(), "output folder;$(touch hacked)");
+        var request = Request(output) with
+        {
+            Source = new MediaFileInfo(sourcePath, Path.GetFileName(sourcePath), ExtractorFeatures.Tracks,
+                [new TrackInfo(0, TrackType.Audio, "A_AAC", "Audio", "eng", new() { ["CodecId"] = "A_AAC" })],
+                [], [], []),
+            SelectedChapterIds = []
+        };
+
+        await new MkvExtractorPlugin(resolver, runner).ExtractAsync(request, new Progress<ExtractionProgress>());
+
+        Assert.Equal([sourcePath, "tracks", "0:" + Path.Combine(output, "movie;$(touch hacked)_Track1.aac")],
+            Assert.Single(runner.Calls).Arguments);
     }
 }

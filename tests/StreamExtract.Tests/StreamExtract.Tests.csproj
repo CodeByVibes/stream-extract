@@ -8,8 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Windows shell integration is deferred until the portable runner fixture in Task 3. -->
-    <Compile Remove="ProcessRunnerTests.cs" />
+    <Compile Remove="TestProcessHost/**/*.cs" />
+    <None Remove="TestProcessHost/**/*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\StreamExtract.Core\StreamExtract.Core.csproj" />
+    <ProjectReference Include="TestProcessHost\TestProcessHost.csproj" />
   </ItemGroup>
 
 </Project>

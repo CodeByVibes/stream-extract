@@ -110,7 +110,7 @@ Tests are headless xUnit tests targeting the pure helpers — path containment,
 request building, selection snapshotting, cue sheet generation, progress math,
 plugin command builders, update parsing, and the process failure/cancellation
 contracts. The bundled native tools are never invoked during tests; the process
-contracts are exercised against `cmd.exe`.
+contracts are exercised against the cross-platform .NET `TestProcessHost` fixture.
 
 ## Architecture
 

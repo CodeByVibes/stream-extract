@@ -21,7 +21,7 @@ public sealed class FakeProcessRunner : IProcessRunner
         CancellationToken ct = default, string? workingDirectory = null, TimeSpan? timeout = null)
     {
         RunCount++;
-        Calls.Add(new ProcessCall(fileName, arguments.ToArray(), workingDirectory));
+        Calls.Add(new ProcessCall(fileName, arguments.ToArray(), workingDirectory, ct, timeout));
         if (ct.IsCancellationRequested)
             return Task.FromCanceled<ProcessResult>(ct);
         if (_handlers.Count > 0)
@@ -43,12 +43,20 @@ public sealed class FakeProcessRunner : IProcessRunner
         CancellationToken ct = default, TimeSpan? timeout = null)
     {
         RunCount++;
-        Calls.Add(new ProcessCall(fileName, arguments.ToArray(), null));
+        Calls.Add(new ProcessCall(fileName, arguments.ToArray(), null, ct, timeout));
+        if (ct.IsCancellationRequested)
+            return Task.FromCanceled(ct);
+        if (_handlers.Count > 0)
+            return RunProgressHandlerAsync(_handlers.Dequeue(), fileName, ct, lineParser, progress);
         if (_responses.Count > 0)
         {
             var (exitCode, stdout, stderr) = _responses.Dequeue();
-            if (ct.IsCancellationRequested)
-                return Task.FromCanceled(ct);
+            foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (lineParser(line) is { } parsed)
+                    progress.Report(parsed);
+            }
             if (exitCode != 0)
                 throw new ExternalToolException(fileName, exitCode, stderr);
             return Task.CompletedTask;
@@ -56,9 +64,30 @@ public sealed class FakeProcessRunner : IProcessRunner
 
         throw new InvalidOperationException($"Unexpected RunWithProgressAsync for '{fileName}'.");
     }
+
+    private static async Task RunProgressHandlerAsync(
+        Func<string, CancellationToken, Task<ProcessResult>> handler, string fileName,
+        CancellationToken ct, Func<string, ExtractionProgress?> lineParser,
+        IProgress<ExtractionProgress> progress)
+    {
+        var result = await handler(fileName, ct);
+        foreach (var line in result.StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries))
+        {
+            ct.ThrowIfCancellationRequested();
+            if (lineParser(line) is { } parsed)
+                progress.Report(parsed);
+        }
+        if (result.ExitCode != 0)
+            throw new ExternalToolException(fileName, result.ExitCode, result.StandardError);
+    }
 }
 
-public sealed record ProcessCall(string FileName, IReadOnlyList<string> Arguments, string? WorkingDirectory);
+public sealed record ProcessCall(
+    string FileName,
+    IReadOnlyList<string> Arguments,
+    string? WorkingDirectory,
+    CancellationToken CancellationToken,
+    TimeSpan? Timeout);
 
 public sealed class TestNativeToolResolver : INativeToolResolver
 {
