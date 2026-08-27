@@ -172,7 +172,11 @@ public partial class Form1 : Form
             try
             {
                 var plugin = _pluginRegistry.GetPlugin(fp);
-                if (plugin is null) continue;
+                if (plugin is null)
+                {
+                    DebugLog($"Unsupported file type: {Path.GetFileName(fp)}");
+                    continue;
+                }
                 var info = await plugin.AnalyzeFileAsync(fp, ct);
                 var imported = new ImportedFile(fp, plugin, info);
                 _importedFiles.Add(imported);

@@ -12,20 +12,25 @@ public sealed class UpdateChecker
     private const string GitHubRepo = "OWNER/REPO"; // TODO: set to your GitHub org/repo
     private const int MaxResponseBytes = 64 * 1024;
 
-    private static readonly HttpClient _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-
-    static UpdateChecker()
-    {
-        _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("StreamExtract-UpdateChecker");
-    }
+    private static readonly HttpClient _defaultHttpClient = CreateDefaultHttpClient();
 
     private readonly string _updateUrl;
     private readonly Func<JsonDocument?, (string version, string url)> _parser;
+    private readonly HttpClient _httpClient;
 
-    private UpdateChecker(string updateUrl, Func<JsonDocument?, (string version, string url)> parser)
+    private UpdateChecker(string updateUrl, Func<JsonDocument?, (string version, string url)> parser,
+        HttpClient? httpClient = null)
     {
         _updateUrl = updateUrl;
         _parser = parser;
+        _httpClient = httpClient ?? _defaultHttpClient;
+    }
+
+    private static HttpClient CreateDefaultHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("StreamExtract-UpdateChecker");
+        return client;
     }
 
     public static UpdateChecker CreateGitHub(string owner, string repo)
@@ -40,8 +45,9 @@ public sealed class UpdateChecker
         });
     }
 
-    public static UpdateChecker CreateCustom(string url, Func<JsonDocument?, (string version, string url)> parser)
-        => new(url, parser);
+    public static UpdateChecker CreateCustom(string url, Func<JsonDocument?, (string version, string url)> parser,
+        HttpMessageHandler? handler = null)
+        => new(url, parser, handler is null ? null : new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) });
 
     public async Task<UpdateInfo?> CheckAsync(CancellationToken ct = default)
     {
@@ -49,6 +55,7 @@ public sealed class UpdateChecker
         try
         {
             using var response = await _httpClient.GetAsync(_updateUrl, HttpCompletionOption.ResponseHeadersRead, ct);
+            response.EnsureSuccessStatusCode();
             var contentLength = response.Content.Headers.ContentLength;
             if (contentLength is > MaxResponseBytes)
             {
@@ -56,18 +63,21 @@ public sealed class UpdateChecker
                 return null;
             }
 
-            // Stream the body into a bounded buffer so a headerless/chunked response
-            // cannot be fully buffered in memory before the size check.
             using var stream = await response.Content.ReadAsStreamAsync(ct);
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            var buffer = new char[MaxResponseBytes + 1];
-            var readCount = await reader.ReadAsync(buffer.AsMemory(), ct);
-            if (readCount > MaxResponseBytes)
+            using var bodyBuffer = new MemoryStream();
+            var buffer = new byte[8192];
+            while (true)
             {
-                Debug.WriteLine($"[UpdateChecker] Update response too large (>{MaxResponseBytes} bytes).");
-                return null;
+                var readCount = await stream.ReadAsync(buffer.AsMemory(), ct);
+                if (readCount == 0) break;
+                if (bodyBuffer.Length + readCount > MaxResponseBytes)
+                {
+                    Debug.WriteLine($"[UpdateChecker] Update response too large (>{MaxResponseBytes} bytes).");
+                    return null;
+                }
+                bodyBuffer.Write(buffer, 0, readCount);
             }
-            body = new string(buffer, 0, readCount);
+            body = Encoding.UTF8.GetString(bodyBuffer.GetBuffer(), 0, checked((int)bodyBuffer.Length));
         }
         catch (OperationCanceledException)
         {

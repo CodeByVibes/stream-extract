@@ -131,7 +131,7 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
             try
             {
                 await _runner.RunAsync("mp4box.exe",
-                    new[] { "-raw", $"{tid}:output={BuildRawOutputName(req, tid)}", req.Source.FilePath },
+                    new[] { "-raw", $"{tid}:output={OutputPath(req, BuildRawOutputName(req, tid))}", req.Source.FilePath },
                     ct, req.OutputDirectory);
             }
             catch (OperationCanceledException)
@@ -152,7 +152,7 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
                 total > 0 ? done * 100 / total : 0, "Extracting chapters...", false));
             try
             {
-                var chapFile = $"{req.OutputDirectory}\\{fn}_chapters.xml";
+                var chapFile = OutputPath(req, $"{fn}_chapters.xml");
                 await _runner.RunAsync("mp4box.exe", new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
             }
             catch (OperationCanceledException)
@@ -168,6 +168,9 @@ public sealed partial class Mp4ExtractorPlugin(string toolPath, IProcessRunner? 
         progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
         return failures.Count == 0 ? ExtractOutcome.Success : new ExtractOutcome(false, failures);
     }
+
+    private static string OutputPath(ExtractRequest req, string fileName)
+        => OutputPathGuard.ResolveContainedPath(req.OutputDirectory, fileName);
 
     internal static string BuildRawOutputName(ExtractRequest req, int trackId)
     {

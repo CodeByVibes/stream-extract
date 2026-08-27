@@ -48,7 +48,30 @@ public static class OutputPathGuard
         if (!full.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException($"Output path escapes the output directory: '{fileName}'.");
 
+        RejectReparsePointsAlongPath(outputRoot, "output directory");
+        RejectReparsePointsAlongPath(Path.GetDirectoryName(full)!, "output path");
+
         return full;
+    }
+
+    private static void RejectReparsePointsAlongPath(string path, string description)
+    {
+        var current = Path.GetFullPath(path);
+        while (!string.IsNullOrEmpty(current))
+        {
+            try
+            {
+                var attributes = File.GetAttributes(current);
+                if ((attributes & FileAttributes.ReparsePoint) != 0)
+                    throw new InvalidDataException($"The {description} contains a reparse point: '{current}'.");
+            }
+            catch (FileNotFoundException) { }
+            catch (DirectoryNotFoundException) { }
+
+            var parent = Directory.GetParent(current)?.FullName;
+            if (string.Equals(parent, current, StringComparison.OrdinalIgnoreCase)) break;
+            current = parent ?? "";
+        }
     }
 
     public static bool IsValidOutputDirectory(string outputDirectory)

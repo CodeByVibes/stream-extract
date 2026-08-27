@@ -146,25 +146,29 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
         IProgress<ExtractionProgress> progress, int modeIndex, int modeCount, CancellationToken ct)
     {
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
-        var xmlPath = $"{req.OutputDirectory}\\{fn}_chapters.xml";
-
-        // If "chapters" was also selected it already wrote chapters.xml just before this
-        // mode; only extract it here when it has not been produced yet.
-        if (req.SelectedChapterIds.Count == 0)
-            await RunModeAsync(BuildChaptersCommand(req), modeIndex, modeCount, progress, ct);
-
-        var chapters = ParseChapterXml(await File.ReadAllTextAsync(xmlPath, ct));
-        if (chapters.Count == 0)
-            throw new InvalidDataException("no chapters found in the source file");
-
-        foreach (var tid in req.SelectedTrackIds)
+        var xmlPath = OutputPath(req, $"{fn}_chapters.{Guid.NewGuid():N}.xml");
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            var track = req.Source.Tracks.Find(t => t.Id == tid);
-            if (track is null) continue;
-            var ext = MkvCodecExtensions.GetExtension(track.Properties.GetValueOrDefault("CodecId", ""));
-            var cuePath = OutputPathGuard.ResolveContainedPath(req.OutputDirectory, $"{fn}_Track{tid + 1}_cues.cue");
-            await File.WriteAllTextAsync(cuePath, BuildPerTrackCue($"{fn}_Track{tid + 1}.{ext}", chapters), ct);
+            await RunModeAsync(BuildChaptersCommand(req, xmlPath), modeIndex, modeCount, progress, ct);
+
+            var chapters = ParseChapterXml(await File.ReadAllTextAsync(xmlPath, ct));
+            if (chapters.Count == 0)
+                throw new InvalidDataException("no chapters found in the source file");
+
+            foreach (var tid in req.SelectedTrackIds)
+            {
+                ct.ThrowIfCancellationRequested();
+                var track = req.Source.Tracks.Find(t => t.Id == tid);
+                if (track is null) continue;
+                var ext = MkvCodecExtensions.GetExtension(track.Properties.GetValueOrDefault("CodecId", ""));
+                var cuePath = OutputPath(req, $"{fn}_Track{tid + 1}_cues.cue");
+                await File.WriteAllTextAsync(cuePath, BuildPerTrackCue($"{fn}_Track{tid + 1}.{ext}", chapters), ct);
+            }
+        }
+        finally
+        {
+            try { File.Delete(xmlPath); }
+            catch { }
         }
     }
 
@@ -209,10 +213,26 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
 
     internal static string FormatCueTime(TimeSpan start)
     {
-        var totalSeconds = (long)Math.Round(start.TotalSeconds, MidpointRounding.AwayFromZero);
-        var ts = TimeSpan.FromSeconds(totalSeconds);
-        return $"{(int)ts.TotalHours:D2}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+        var totalSeconds = Math.Max(0, start.TotalSeconds);
+        var minutes = (int)(totalSeconds / 60);
+        var seconds = (int)(totalSeconds % 60);
+        var frames = (int)Math.Round((totalSeconds - Math.Floor(totalSeconds)) * 75,
+            MidpointRounding.AwayFromZero);
+        if (frames >= 75)
+        {
+            frames = 0;
+            seconds++;
+        }
+        if (seconds >= 60)
+        {
+            seconds = 0;
+            minutes++;
+        }
+        return $"{minutes:D2}:{seconds:D2}:{frames:D2}";
     }
+
+    private static string OutputPath(ExtractRequest req, string fileName)
+        => OutputPathGuard.ResolveContainedPath(req.OutputDirectory, fileName);
 
     [GeneratedRegex(@"(\d+)%")] private static partial Regex ProgressRe();
     private static ExtractionProgress? ParseProgress(string line)
@@ -232,16 +252,16 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
             var t = req.Source.Tracks.Find(x => x.Id == tid);
             if (t is null) continue;
             var ext = MkvCodecExtensions.GetExtension(t.Properties.GetValueOrDefault("CodecId", ""));
-            args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}.{ext}");
+            args.Add($"{tid}:{OutputPath(req, $"{fn}_Track{tid + 1}.{ext}")}");
         }
         return args;
     }
 
     internal static IEnumerable<string> BuildChaptersCommand(ExtractRequest req)
-    {
-        var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
-        return new[] { req.Source.FilePath, "chapters", $"{req.OutputDirectory}\\{fn}_chapters.xml" };
-    }
+        => BuildChaptersCommand(req, OutputPath(req, $"{Path.GetFileNameWithoutExtension(req.Source.FilePath)}_chapters.xml"));
+
+    private static IEnumerable<string> BuildChaptersCommand(ExtractRequest req, string outputPath)
+        => new[] { req.Source.FilePath, "chapters", outputPath };
 
     internal static (List<string> Args, List<string> Failures) BuildAttachmentsCommand(ExtractRequest req)
     {
@@ -271,13 +291,13 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
     internal static IEnumerable<string> BuildTagsCommand(ExtractRequest req)
     {
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
-        return new[] { req.Source.FilePath, "tags", $"{req.OutputDirectory}\\{fn}_tags.xml" };
+        return new[] { req.Source.FilePath, "tags", OutputPath(req, $"{fn}_tags.xml") };
     }
 
     internal static IEnumerable<string> BuildCueSheetsCommand(ExtractRequest req)
     {
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
-        return new[] { req.Source.FilePath, "cuesheet", $"{req.OutputDirectory}\\{fn}_cuesheet.cue" };
+        return new[] { req.Source.FilePath, "cuesheet", OutputPath(req, $"{fn}_cuesheet.cue") };
     }
 
     internal static IEnumerable<string> BuildTimestampsCommand(ExtractRequest req)
@@ -287,7 +307,7 @@ public sealed partial class MkvExtractorPlugin(string toolPath, IProcessRunner? 
         foreach (var tid in req.SelectedTrackIds)
         {
             if (req.Source.Tracks.Find(x => x.Id == tid) is null) continue;
-            args.Add($"{tid}:{req.OutputDirectory}\\{fn}_Track{tid + 1}_timestamps.txt");
+            args.Add($"{tid}:{OutputPath(req, $"{fn}_Track{tid + 1}_timestamps.txt")}");
         }
         return args;
     }
