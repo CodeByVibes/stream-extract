@@ -43,23 +43,23 @@
 - Consumes: Existing model, plugin, and service types and their current public/internal APIs.
 - Produces: A `StreamExtract.Core` assembly targeting `net10.0`; the WinForms application references it and remains the only consumer of WinForms types.
 
-- [ ] **Step 1: Add the core project and solution entry**
+- [x] **Step 1: Add the core project and solution entry**
 
 Create a `Microsoft.NET.Sdk` project with `TargetFramework` `net10.0`, nullable and implicit usings enabled, and no `UseWindowsForms` or Windows target framework settings. Add it to `stream-extract-winforms.slnx`.
 
-- [ ] **Step 2: Move only platform-neutral source into the core**
+- [x] **Step 2: Move only platform-neutral source into the core**
 
 Move `Models/*.cs`, `Plugins/*.cs`, `Services/ExternalToolException.cs`, `Services/ExtractionRequestBuilder.cs`, `Services/IProcessRunner.cs`, `Services/OutputPathGuard.cs`, `Services/ProcessRunner.cs`, and `Services/UpdateChecker.cs` into the core project. Keep `BrowserLauncher.cs` in the WinForms shell initially if it remains UI-only. Preserve namespaces so consumers do not need broad renames.
 
-- [ ] **Step 3: Reference the core from the WinForms project**
+- [x] **Step 3: Reference the core from the WinForms project**
 
 Add a project reference from `stream-extract-winforms.csproj` to `StreamExtract.Core`. Remove moved source files from the WinForms project’s compile items if SDK default inclusion would otherwise compile both copies. Keep WinForms source, designer files, resources, `Program.cs`, and `SmoothProgressBar.cs` in the Windows project.
 
-- [ ] **Step 4: Retarget tests and preserve internals access**
+- [x] **Step 4: Retarget tests and preserve internals access**
 
 Retarget `tests/StreamExtract.Tests/StreamExtract.Tests.csproj` to `net10.0`, remove `EnableWindowsTargeting`, and reference `StreamExtract.Core` rather than the WinForms project. Add `InternalsVisibleTo` for `StreamExtract.Tests` to the core project. Keep any explicitly UI-dependent tests Windows-only rather than making the core reference Windows-targeted.
 
-- [ ] **Step 5: Build the core and Windows shell separately**
+- [x] **Step 5: Build the core and Windows shell separately**
 
 Run:
 
@@ -70,7 +70,7 @@ dotnet build stream-extract-winforms.csproj -p:BaseIntermediateOutputPath=/tmp/s
 
 Expected: both projects build without errors; the core builds on Linux and the WinForms shell remains Windows-targeted.
 
-- [ ] **Step 6: Commit the core split**
+- [x] **Step 6: Commit the core split**
 
 ```bash
 git add StreamExtract.Core stream-extract-winforms.csproj stream-extract-winforms.slnx tests/StreamExtract.Tests/StreamExtract.Tests.csproj Models Plugins Services Form1.cs Program.cs
@@ -95,27 +95,27 @@ git commit -m "refactor: extract platform-neutral core"
 - Consumes: A base directory containing `tools/` and `tools-manifest.json`.
 - Produces: `NativeToolResolver.Resolve(NativeToolId)` returning an executable path; plugins no longer hard-code `.exe` names; validator rejects missing, mismatched, non-executable, and invalid manifest tools.
 
-- [ ] **Step 1: Define logical tool identifiers and manifest records**
+- [x] **Step 1: Define logical tool identifiers and manifest records**
 
 Define an enum or equivalent closed set containing `MkvMerge`, `MkvExtract`, and `Mp4Box`. Define manifest records containing logical name, filename, version, RID, source identifier, and SHA-256. Use Linux names `mkvmerge`, `mkvextract`, and `MP4Box`; use Windows names `mkvmerge.exe`, `mkvextract.exe`, and `mp4box.exe`.
 
-- [ ] **Step 2: Write resolver and validator tests first**
+- [x] **Step 2: Write resolver and validator tests first**
 
 Test that the resolver selects the expected filename for the current OS, resolves paths relative to an explicit application base directory, rejects an unknown logical tool, and does not fall back to `PATH`. Test validator outcomes for valid files, missing files, wrong hashes, malformed manifests, and Linux files without executable permission.
 
-- [ ] **Step 3: Implement bundled resolver and manifest validation**
+- [x] **Step 3: Implement bundled resolver and manifest validation**
 
 Load `tools-manifest.json` from the application base directory, resolve only the expected `tools/` child path, calculate SHA-256 using a streaming file read, and on Linux verify `UnixFileMode.UserExecute` or equivalent executable permission. Return typed validation failures that the CLI and GUI can format without exposing implementation details.
 
-- [ ] **Step 4: Update plugins to consume resolved paths**
+- [x] **Step 4: Update plugins to consume resolved paths**
 
 Change plugin construction to receive an `INativeToolResolver` or resolved tool set. Preserve the existing `IProcessRunner` abstraction and command arguments. Each plugin should pass the resolved executable path or logical filename through the runner without appending `.exe` itself.
 
-- [ ] **Step 5: Adapt Windows startup validation**
+- [x] **Step 5: Adapt Windows startup validation**
 
 Replace the hard-coded Windows-only hash dictionary in `Program.cs` with the shared validator and the existing Windows bundle manifest or equivalent Windows-specific validation data. Keep the current fail-closed message-box behavior in the WinForms shell.
 
-- [ ] **Step 6: Run focused tests and commit**
+- [x] **Step 6: Run focused tests and commit**
 
 ```bash
 dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj --no-restore --filter FullyQualifiedName~NativeTool
@@ -136,19 +136,19 @@ git commit -m "feat: resolve and validate bundled native tools"
 - Consumes: `ProcessRunner` and `IProcessRunner` from `StreamExtract.Core`.
 - Produces: Linux-runnable tests for stdout/stderr capture, exit codes, progress parsing, timeout, and process-tree cancellation.
 
-- [ ] **Step 1: Add a cross-platform process fixture**
+- [x] **Step 1: Add a cross-platform process fixture**
 
 Create a tiny test helper executable or fixture script abstraction that can emit supplied stdout/stderr, exit with a supplied code, and sleep for cancellation tests. Prefer invoking the current test assembly or `dotnet` with explicit arguments; do not use `cmd.exe`, `/c`, `exit /b`, `ping -n`, or `nul` in production-portable tests.
 
-- [ ] **Step 2: Replace Windows shell tests**
+- [x] **Step 2: Replace Windows shell tests**
 
 Rewrite each `ProcessRunnerTests` case to call the helper through `ProcessStartInfo.ArgumentList`. Preserve assertions for progress parsing, stdout fallback, nonzero exit code, pre-cancellation, timeout, and process termination.
 
-- [ ] **Step 3: Strengthen fake-runner command assertions**
+- [x] **Step 3: Strengthen fake-runner command assertions**
 
 Record filename, argument list, working directory, and cancellation token in `FakeProcessRunner`. Add assertions in plugin tests that generated paths and tool invocations are passed as separate arguments.
 
-- [ ] **Step 4: Run all tests on Linux**
+- [x] **Step 4: Run all tests on Linux**
 
 ```bash
 dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj --no-restore -p:BaseIntermediateOutputPath=/tmp/stream-extract-tests-obj/ -p:OutputPath=/tmp/stream-extract-tests-bin/
@@ -156,7 +156,7 @@ dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj --no-restore -p
 
 Expected: all core tests pass without WinForms or Windows shell dependencies.
 
-- [ ] **Step 5: Commit the portable test suite**
+- [x] **Step 5: Commit the portable test suite**
 
 ```bash
 git add tests/StreamExtract.Tests Services/ProcessRunner.cs
@@ -181,31 +181,31 @@ git commit -m "test: run process coverage across platforms"
 - Consumes: Core plugin registry, `NativeToolResolver`, `ExtractionRequestBuilder`, `ExtractRequest`, `MediaFileInfo`, and `ExtractOutcome`.
 - Produces: `streamextract info <file>`, `streamextract extract <file...> [options]`, `--help`, and `--version`; exit codes `0` success, `2` usage error, `1` extraction/tool failure, and `130` cancellation.
 
-- [ ] **Step 1: Define CLI option records and exact syntax**
+- [x] **Step 1: Define CLI option records and exact syntax**
 
 Implement options for `--tracks <id[,id...]>`, `--chapters`, `--attachments`, `--tags`, `--cue-sheets`, `--cues-for-selected-tracks`, `--timestamps`, `--all`, `--output <directory>`, and `--verbose`. Reject duplicate/conflicting values, malformed IDs, unknown options, missing values, no selected modes, and unsupported files with usage exit code `2`.
 
-- [ ] **Step 2: Write parser and formatter tests**
+- [x] **Step 2: Write parser and formatter tests**
 
 Test the two documented command forms, every extraction flag, multiple input files, `--all`, invalid track lists, missing output values, help/version, and stable readable formatting for tracks, chapters, attachments, and tags. Assert that no parser test requires native tools.
 
-- [ ] **Step 3: Implement `info`**
+- [x] **Step 3: Implement `info`**
 
 Resolve and validate tools before analysis, select the plugin by extension, call `AnalyzeFileAsync`, and format all returned media information. Report errors to stderr and return the defined nonzero status without showing GUI dialogs or attempting update checks.
 
-- [ ] **Step 4: Implement `extract` for one or more files**
+- [x] **Step 4: Implement `extract` for one or more files**
 
 For each input, analyze the file, map CLI selections to `FileSelection`, validate/create the output directory, call `ExtractionRequestBuilder.TryBuild`, and invoke the plugin. Continue independent files and modes according to the existing `ExtractOutcome` contract. Print per-file and per-mode failures and return `1` if any extraction failed.
 
-- [ ] **Step 5: Wire progress and cancellation**
+- [x] **Step 5: Wire progress and cancellation**
 
 Register a `Console.CancelKeyPress` handler that cancels a shared `CancellationTokenSource`, set `e.Cancel = true` on the first signal, and allow the process runner to terminate the active native process. Return `130` for cancellation. Keep progress output correct when redirected to a non-interactive terminal.
 
-- [ ] **Step 6: Add the CLI project and publish smoke test**
+- [x] **Step 6: Add the CLI project and publish smoke test**
 
 Add `StreamExtract.Cli` to the solution, reference only `StreamExtract.Core`, publish self-contained for `linux-x64`, and verify `--help` and `--version` from the published executable.
 
-- [ ] **Step 7: Run CLI tests and commit**
+- [x] **Step 7: Run CLI tests and commit**
 
 ```bash
 dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj --no-restore --filter FullyQualifiedName~Cli
@@ -230,27 +230,27 @@ git commit -m "feat: add full-featured Linux CLI"
 - Consumes: A self-contained CLI publish directory and pinned upstream artifact metadata.
 - Produces: `streamextract-linux-x64.tar.gz` containing the CLI, `tools/mkvmerge`, `tools/mkvextract`, `tools/MP4Box`, licenses, and `tools-manifest.json`.
 
-- [ ] **Step 1: Pin tool versions and artifact metadata**
+- [x] **Step 1: Pin tool versions and artifact metadata**
 
 Record exact MKVToolNix and GPAC versions, Linux x64 artifact URLs or release identifiers, expected archive formats, required executable paths, and SHA-256 values in a reviewed build input file. Do not query a mutable latest endpoint during packaging.
 
-- [ ] **Step 2: Implement verified tool download and extraction**
+- [x] **Step 2: Implement verified tool download and extraction**
 
 Write a shell script with strict failure options that downloads each pinned artifact, verifies SHA-256 before extraction, extracts only the required executables and license files, renames them to the archive contract, and fails if any expected executable is missing.
 
-- [ ] **Step 3: Assemble archive and permissions**
+- [x] **Step 3: Assemble archive and permissions**
 
 Publish the CLI self-contained for `linux-x64`, copy tools and licenses into the specified layout, generate the manifest from the pinned metadata, run `chmod +x` on the CLI and native tools, and create a reproducible `.tar.gz` using normalized archive metadata.
 
-- [ ] **Step 4: Add archive smoke tests**
+- [x] **Step 4: Add archive smoke tests**
 
 Run the bundled tools with harmless version/info commands, invoke the bundled CLI with `--help` and `--version`, verify all expected files and executable bits, and run `info` against representative MKV and MP4 fixtures. Ensure the smoke test does not use system-installed tool paths.
 
-- [ ] **Step 5: Document Linux installation and provenance**
+- [x] **Step 5: Document Linux installation and provenance**
 
 Update `README.md` with Linux archive installation, execution, supported commands, bundled tool provenance, version/checksum verification, and the fact that no separate runtime or native-tool installation is required.
 
-- [ ] **Step 6: Run release validation and commit**
+- [x] **Step 6: Run release validation and commit**
 
 ```bash
 build/linux/fetch-native-tools.sh
@@ -272,13 +272,13 @@ git commit -m "build: package Linux CLI with verified tools"
 - Consumes: Completed core split, tool resolver, CLI, tests, and release archive.
 - Produces: Evidence that Linux CLI functionality and existing Windows GUI build requirements are both satisfied.
 
-- [ ] **Step 1: Run Linux core and CLI tests**
+- [x] **Step 1: Run Linux core and CLI tests**
 
 ```bash
 dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj --no-restore -p:BaseIntermediateOutputPath=/tmp/stream-extract-final-tests-obj/ -p:OutputPath=/tmp/stream-extract-final-tests-bin/
 ```
 
-- [ ] **Step 2: Build the Linux CLI and Windows GUI**
+- [x] **Step 2: Build the Linux CLI and Windows GUI**
 
 ```bash
 dotnet publish StreamExtract.Cli/StreamExtract.Cli.csproj -c Release -r linux-x64 --self-contained true -o /tmp/streamextract-final-cli
@@ -287,15 +287,15 @@ dotnet build stream-extract-winforms.csproj -c Release -p:BaseIntermediateOutput
 
 Expected: Linux CLI publish succeeds; Windows project remains buildable under the installed SDK with Windows targeting enabled.
 
-- [ ] **Step 3: Verify archive behavior on a clean Linux environment**
+- [x] **Step 3: Verify archive behavior on a clean Linux environment**
 
 Extract the archive into a temporary directory with no reliance on `PATH` for native tools, invoke `--help`, `--version`, `info`, and representative extraction commands, then verify no child native process remains after cancellation.
 
-- [ ] **Step 4: Review security and repository state**
+- [x] **Step 4: Review security and repository state**
 
 Confirm no third-party Linux binaries are tracked, all release URLs are pinned, manifests match packaged tools, generated outputs are ignored, and no unrelated files are staged.
 
-- [ ] **Step 5: Commit any final documentation-only corrections**
+- [x] **Step 5: Commit any final documentation-only corrections**
 
 ```bash
 git status --short

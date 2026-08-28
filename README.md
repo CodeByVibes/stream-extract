@@ -1,14 +1,14 @@
 # StreamExtract
 
-> A Windows desktop app for extracting tracks, chapters, attachments, tags,
+> A desktop and CLI tool for extracting tracks, chapters, attachments, tags,
 > cue sheets, and timestamps from MKV and MP4 files.
 
-StreamExtract is a WinForms application built with .NET 10. It wraps
-[MKVToolNix](https://mkvtoolnix.download/) (`mkvmerge`, `mkvextract`) and
-[GPAC](https://wiki.gpac.io/) (`mp4box`) to extract individual streams and
-metadata from media containers. The application starts the bundled native
-tools directly without shell interpretation; the Linux archive uses small
-local launchers to set each tool's bundled library path.
+StreamExtract provides a Windows desktop GUI (WinForms) and a Linux command-line
+interface built with .NET 10. It wraps [MKVToolNix](https://mkvtoolnix.download/)
+(`mkvmerge`, `mkvextract`) and [GPAC](https://wiki.gpac.io/) (`mp4box`) to
+extract individual streams and metadata from media containers. The application
+starts the bundled native tools directly without shell interpretation; the Linux
+archive uses local launchers to set each tool's bundled library path.
 
 ## Features
 
@@ -104,7 +104,7 @@ The archive also contains `tools/mkvtoolnix-runtime/` and `tools/lib/`, which ho
 
 ### Linux CLI
 
-The CLI offers equivalent functionality:
+The CLI provides full feature parity with the GUI:
 
 ```bash
 # Print media information
@@ -113,9 +113,21 @@ The CLI offers equivalent functionality:
 # Extract specific tracks and chapters
 ./streamextract extract movie.mkv --tracks 1,2 --chapters --output ./out
 
-# Extract all supported features
-./streamextract extract movie.mkv --all --output ./out
+# Extract all supported features from multiple files
+./streamextract extract movie1.mkv movie2.mp4 --all --output ./out
+
+# Extract cue sheets, per-track cue sheets, and timestamps
+./streamextract extract concert.mkv --cue-sheets --cues-for-selected-tracks --timestamps --output ./out
 ```
+
+#### Exit Codes
+
+| Code | Meaning | Description |
+| :---: | :--- | :--- |
+| `0` | Success | Command completed successfully. |
+| `1` | Extraction Error | Native tool failure or extraction error occurred. |
+| `2` | Usage Error | Invalid syntax, missing input file, or invalid track ID. |
+| `130` | Cancelled | Process was interrupted/cancelled (e.g. via `Ctrl+C`). |
 
 Supported extraction options per file type:
 
@@ -147,10 +159,6 @@ The build is warning-free.
 
 ### Testing
 
-```bash
-dotnet test
-```
-
 On Linux, run the portable test project directly:
 
 ```bash
@@ -165,21 +173,37 @@ builders, update parsing, and process failure/cancellation contracts. The
 bundled native tools are never invoked during tests; the process contracts are
 exercised against the cross-platform .NET `TestProcessHost` fixture.
 
+### Linux Packaging & Smoke Tests
+
+To package the self-contained Linux release archive and run the smoke tests locally:
+
+```bash
+# Package the CLI with pinned native tools
+build/linux/fetch-native-tools.sh
+
+# Generate test fixtures and run bundle smoke tests
+build/linux/generate-fixtures.sh
+SMOKE_FIXTURES="/tmp/streamextract-fixtures/sample.mp4
+/tmp/streamextract-fixtures/sample.mkv" build/linux/smoke-test.sh
+```
+
 ## Architecture
 
-The solution is split into three layers:
+The codebase is organized into three projects:
 
-- **`Form1`** — WinForms UI. Import and extraction run as async methods on the
-  UI thread (WinForms `SynchronizationContext`). Selection is snapshotted from
-  `TreeNode.Tag` values into immutable `ImportedFile`/`FileSelection` records.
-- **`Plugins/`** — `IExtractorPlugin` implementations (`MkvExtractorPlugin`,
-  `Mp4ExtractorPlugin`) that analyze files and build per-mode native-tool
-  commands, registered by extension in `PluginRegistry`.
-- **`Services/`** — `IProcessRunner`/`ProcessRunner` (process execution with
-  kill-on-cancel and throw-on-non-zero-exit), `ExternalToolException` (tool
-  failures with exit code and captured output), `OutputPathGuard` (path
-  containment), `ExtractionRequestBuilder` (selection to request mapping), and
-  `UpdateChecker`/`BrowserLauncher`.
+- **`StreamExtract.Core`** (`net10.0`) — Platform-neutral core containing media
+  container models, extractor plugins (`MkvExtractorPlugin`, `Mp4ExtractorPlugin`),
+  process runners (`ProcessRunner` with process-tree cancellation), output path
+  validation (`OutputPathGuard`), native tool resolution & integrity verification
+  (`NativeToolValidator`, `NativeToolResolver`), request builders
+  (`ExtractionRequestBuilder`), and update checking.
+- **`StreamExtract.Cli`** (`net10.0`) — Standalone, self-contained cross-platform
+  command-line interface handling argument parsing, terminal formatting, real-time
+  extraction progress reporting, signal cancellation (`SIGINT`), and standardized
+  exit codes.
+- **`stream-extract-winforms`** (`net10.0-windows`) — Windows desktop WinForms GUI
+  application for visual file selection, checkbox tree configuration, and progress
+  logging.
 
 Key design decisions:
 
