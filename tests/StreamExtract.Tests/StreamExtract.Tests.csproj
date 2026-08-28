@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\StreamExtract.Core\StreamExtract.Core.csproj" />
+    <ProjectReference Include="..\..\StreamExtract.Cli\StreamExtract.Cli.csproj" />
     <ProjectReference Include="TestProcessHost\TestProcessHost.csproj" />
   </ItemGroup>
 

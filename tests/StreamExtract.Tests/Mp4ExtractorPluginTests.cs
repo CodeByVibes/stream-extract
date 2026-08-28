@@ -281,4 +281,55 @@ public class Mp4ExtractorPluginTests
         Assert.Equal(["-raw", "1:output=" + Path.Combine(output, "movie;$(touch hacked)_Track2.h264"), sourcePath],
             Assert.Single(runner.Calls).Arguments);
     }
+
+    [Fact]
+    public async Task ExtractAsync_PartialFailure_DoesNotReportCompletion()
+    {
+        var runner = new FakeProcessRunner();
+        runner.AddResult(0, "", "");
+        runner.AddResult(1, "", "second track failed");
+        var source = new MediaFileInfo(@"C:\media\movie.mp4", "movie.mp4", ExtractorFeatures.Tracks,
+            [new TrackInfo(1, TrackType.Video, "avc1", "Video", "und", new() { ["CodecId"] = "avc1" }),
+             new TrackInfo(2, TrackType.Audio, "mp4a", "Audio", "und", new() { ["CodecId"] = "mp4a" })], [], [], []);
+        var request = new ExtractRequest(source, Path.Combine(Path.GetTempPath(), "mp4-output"), [1, 2], [], false, false, false, false, false);
+        var progress = new List<ExtractionProgress>();
+
+        var outcome = await new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner)
+            .ExtractAsync(request, new Progress<ExtractionProgress>(progress.Add));
+
+        Assert.False(outcome.Succeeded);
+        Assert.Contains(outcome.Failures, failure => failure.Contains("second track failed"));
+        Assert.DoesNotContain(progress, item => item.IsComplete);
+    }
+
+    [Fact]
+    public async Task ExtractAsync_ReportsItemProgressOnlyAfterExtractionCompletes()
+    {
+        var extractionStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowExtraction = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var runner = new FakeProcessRunner();
+        runner.AddHandler(async (_, _) =>
+        {
+            extractionStarted.SetResult();
+            await allowExtraction.Task;
+            return new ProcessResult(0, "", "");
+        });
+        var source = new MediaFileInfo("movie.mp4", "movie.mp4", ExtractorFeatures.Tracks,
+            [new TrackInfo(1, TrackType.Video, "avc1", "Video", "und", new() { ["CodecId"] = "avc1" })], [], [], []);
+        var request = new ExtractRequest(source, Path.GetTempPath(), [1], [], false, false, false, false, false);
+        var progress = new List<ExtractionProgress>();
+
+        var extraction = new Mp4ExtractorPlugin(new TestNativeToolResolver(), runner)
+            .ExtractAsync(request, new ImmediateProgress(progress.Add));
+        await extractionStarted.Task;
+        Assert.Empty(progress);
+        allowExtraction.SetResult();
+        await extraction;
+        Assert.Contains(progress, item => item.CurrentItem == "Track 1");
+    }
+
+    private sealed class ImmediateProgress(Action<ExtractionProgress> handler) : IProgress<ExtractionProgress>
+    {
+        public void Report(ExtractionProgress value) => handler(value);
+    }
 }

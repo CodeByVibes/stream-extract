@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <Compile Remove="StreamExtract.Core\**" />
+    <Compile Remove="StreamExtract.Cli\**" />
   </ItemGroup>
 
   <ItemGroup>

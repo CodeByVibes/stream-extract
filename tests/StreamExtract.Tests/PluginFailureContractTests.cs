@@ -149,4 +149,49 @@ public class PluginFailureContractTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => plugin.ExtractAsync(MakeRequest(), new Progress<ExtractionProgress>(), cts.Token));
     }
+
+    [Fact]
+    public async Task MkvExtractAsync_PropagatesCallerCancellationTokenToRunner()
+    {
+        var runner = new FakeProcessRunner();
+        runner.AddHandler((_, _) => Task.FromResult(new ProcessResult(0, "", "")));
+        using var cts = new CancellationTokenSource();
+        var plugin = new Plugins.MkvExtractorPlugin(new TestNativeToolResolver(), runner);
+
+        await plugin.ExtractAsync(MakeRequest(), new Progress<ExtractionProgress>(), cts.Token);
+
+        Assert.Equal(cts.Token, Assert.Single(runner.Calls).CancellationToken);
+    }
+
+    [Fact]
+    public async Task Mp4ExtractAsync_PropagatesCallerCancellationTokenToRunner()
+    {
+        var runner = new FakeProcessRunner();
+        runner.AddHandler((_, _) => Task.FromResult(new ProcessResult(0, "", "")));
+        using var cts = new CancellationTokenSource();
+        var plugin = new Plugins.Mp4ExtractorPlugin(new TestNativeToolResolver(), runner);
+
+        await plugin.ExtractAsync(MakeRequest(), new Progress<ExtractionProgress>(), cts.Token);
+
+        Assert.Equal(cts.Token, Assert.Single(runner.Calls).CancellationToken);
+    }
+
+    [Fact]
+    public async Task FakeProcessRunner_RunWithProgressAsync_PreCancelledTokenSkipsHandler()
+    {
+        var runner = new FakeProcessRunner();
+        var invoked = false;
+        runner.AddHandler((_, _) =>
+        {
+            invoked = true;
+            return Task.FromResult(new ProcessResult(0, "", ""));
+        });
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runner.RunWithProgressAsync(
+            "tool", [], _ => null, new Progress<ExtractionProgress>(), cts.Token));
+
+        Assert.False(invoked);
+    }
 }

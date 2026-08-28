@@ -132,14 +132,14 @@ public sealed partial class Mp4ExtractorPlugin : IExtractorPlugin
         foreach (var tid in req.SelectedTrackIds)
         {
             ct.ThrowIfCancellationRequested();
-            done++;
-            progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {tid}",
-                total > 0 ? done * 100 / total : 0, $"Extracting track {tid}...", false));
             try
             {
                 await _runner.RunAsync(_tool,
                     new[] { "-raw", $"{tid}:output={OutputPath(req, BuildRawOutputName(req, tid))}", req.Source.FilePath },
                     ct, req.OutputDirectory);
+                done++;
+                progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {tid}",
+                    total > 0 ? done * 100 / total : 0, $"Extracted track {tid}.", false));
             }
             catch (OperationCanceledException)
             {
@@ -154,13 +154,13 @@ public sealed partial class Mp4ExtractorPlugin : IExtractorPlugin
         if (req.SelectedChapterIds.Count > 0)
         {
             ct.ThrowIfCancellationRequested();
-            done++;
-            progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
-                total > 0 ? done * 100 / total : 0, "Extracting chapters...", false));
             try
             {
                 var chapFile = OutputPath(req, $"{fn}_chapters.xml");
                 await _runner.RunAsync(_tool, new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
+                done++;
+                progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
+                    total > 0 ? done * 100 / total : 0, "Extracted chapters.", false));
             }
             catch (OperationCanceledException)
             {
@@ -172,7 +172,8 @@ public sealed partial class Mp4ExtractorPlugin : IExtractorPlugin
             }
         }
 
-        progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
+        if (failures.Count == 0)
+            progress.Report(new ExtractionProgress("", "", 100, "Done", IsComplete: true));
         return failures.Count == 0 ? ExtractOutcome.Success : new ExtractOutcome(false, failures);
     }
 

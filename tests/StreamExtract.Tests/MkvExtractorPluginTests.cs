@@ -61,6 +61,25 @@ public sealed class MkvExtractorPluginTests
     }
 
     [Fact]
+    public void BuildTimestampsCommand_UsesOnlyExplicitlySelectedTracks()
+    {
+        var info = Request().Source with
+        {
+            Tracks =
+            [
+                new TrackInfo(0, TrackType.Audio, "A_AAC", "Audio", "eng", new() { ["CodecId"] = "A_AAC" }),
+                new TrackInfo(1, TrackType.Audio, "A_OPUS", "Commentary", "eng", new() { ["CodecId"] = "A_OPUS" })
+            ]
+        };
+        var request = new ExtractRequest(info, Request().OutputDirectory, [1], [], false, false, false, true, false);
+
+        var args = MkvExtractorPlugin.BuildTimestampsCommand(request).ToArray();
+
+        Assert.Contains("1:" + Path.Combine(request.OutputDirectory, "movie_Track2_timestamps.txt"), args);
+        Assert.DoesNotContain(args, arg => arg.StartsWith("0:"));
+    }
+
+    [Fact]
     public async Task ExtractAsync_UsesResolverExecutableAndWorkingDirectory()
     {
         var resolver = new TestNativeToolResolver();
