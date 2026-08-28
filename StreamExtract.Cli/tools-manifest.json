@@ -1,0 +1,28 @@
+{
+  "tools": [
+    {
+      "id": "MkvMerge",
+      "filename": "mkvmerge",
+      "version": "__MKVTOOLNIX_VERSION__",
+      "rid": "linux-x64",
+      "source": "__MKVTOOLNIX_URL__",
+      "sha256": "__MKVMERGE_SHA256__"
+    },
+    {
+      "id": "MkvExtract",
+      "filename": "mkvextract",
+      "version": "__MKVTOOLNIX_VERSION__",
+      "rid": "linux-x64",
+      "source": "__MKVTOOLNIX_URL__",
+      "sha256": "__MKVEXTRACT_SHA256__"
+    },
+    {
+      "id": "Mp4Box",
+      "filename": "MP4Box",
+      "version": "__GPAC_VERSION__",
+      "rid": "linux-x64",
+      "source": "__GPAC_URL__",
+      "sha256": "__MP4BOX_SHA256__"
+    }
+  ]
+}

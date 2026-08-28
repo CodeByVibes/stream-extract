@@ -30,14 +30,16 @@ directly — no shell, no scripting.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build
   from source
 - Windows (the app is `net10.0-windows` and uses WinForms)
+- Linux (`linux-x64` for the CLI; requires no separate .NET or native-tool installation)
 
-The three native tools are committed in `tools/` and are required at runtime:
+The native tools are bundled (Windows tools are in `tools/`, Linux tools are in the release archive) and required at runtime:
 
-- `tools/mkvextract.exe` and `tools/mkvmerge.exe` — from
-  [MKVToolNix](https://mkvtoolnix.download/)
-- `tools/mp4box.exe` — from [GPAC](https://wiki.gpac.io/)
+- `mkvextract` / `mkvmerge` — from [MKVToolNix](https://mkvtoolnix.download/)
+- `MP4Box` — from [GPAC](https://wiki.gpac.io/)
 
 ## Installation
+
+### Windows GUI
 
 No installer is provided. To run from source:
 
@@ -56,6 +58,19 @@ dotnet build -c Release
 The build copies `tools/` and `licenses/` into the output directory. Launch the
 app from there, or run the produced `stream-extract-winforms.exe`.
 
+
+### Linux CLI
+
+Download the `linux-x64` release archive (`streamextract-linux-x64.tar.gz`) and extract it:
+
+```bash
+tar -xzf streamextract-linux-x64.tar.gz
+cd streamextract
+```
+
+The Linux release archive is self-contained. It includes the CLI and verified `mkvmerge`, `mkvextract`, and `MP4Box` Linux binaries. You do not need to install `.NET` or the native tools separately.
+The release packaging process securely downloads pinned native tool versions, verifies their SHA-256 checksums, and bundles them.
+
 > [!NOTE]
 > If you delete or relocate a bundled tool — or replace it with one whose
 > SHA-256 hash does not match — the app refuses to start and reports the
@@ -64,6 +79,8 @@ app from there, or run the produced `stream-extract-winforms.exe`.
 
 ## Usage
 
+### Windows GUI
+
 1. **Add files** — drag media files onto the tree, or click **Open files**.
 2. **Select output folder** — choose a folder, or keep **Use source** checked
    to write next to the first imported file.
@@ -71,6 +88,22 @@ app from there, or run the produced `stream-extract-winforms.exe`.
    each file. Checking a file node checks all of its children.
 4. **Extract** — click **Extract**. Progress is shown on the progress bar and
    in the log pane.
+
+
+### Linux CLI
+
+The CLI offers equivalent functionality:
+
+```bash
+# Print media information
+./streamextract info <file>
+
+# Extract specific tracks and chapters
+./streamextract extract movie.mkv --tracks 1,2 --chapters --output ./out
+
+# Extract all supported features
+./streamextract extract movie.mkv --all --output ./out
+```
 
 Supported extraction options per file type:
 
