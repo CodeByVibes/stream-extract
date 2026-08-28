@@ -11,7 +11,17 @@ public sealed record NativeToolManifestRecord(
     string Source,
     string Sha256);
 
-public sealed record NativeToolManifest(IReadOnlyList<NativeToolManifestRecord> Tools)
+public sealed record NativeToolManifestArtifact(
+    string Path,
+    string Version,
+    string Rid,
+    string Source,
+    string Sha256,
+    bool Executable);
+
+public sealed record NativeToolManifest(
+    IReadOnlyList<NativeToolManifestRecord> Tools,
+    IReadOnlyList<NativeToolManifestArtifact>? Artifacts = null)
 {
     public static NativeToolManifest Load(string applicationBaseDirectory)
     {

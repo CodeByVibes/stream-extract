@@ -1,38 +1,41 @@
-name: Linux Release Packaging
+name: Linux CLI
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
-  build-and-package:
+  package:
     runs-on: ubuntu-24.04
-
+    env:
+      SMOKE_FIXTURES: |
+        /tmp/streamextract-fixtures/sample.mp4
+        /tmp/streamextract-fixtures/sample.mkv
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup .NET 10
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
-
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y zstd binutils
-
-      - name: Run native tools fetch script
+          dotnet-version: 10.x
+      - name: Install packaging dependencies
+        run: sudo apt-get update && sudo apt-get install --yes binutils curl squashfs-tools tar zstd
+      - name: Validate and package
+        run: build/linux/fetch-native-tools.sh
+      - name: Smoke test
         run: |
-          chmod +x build/linux/fetch-native-tools.sh
-          ./build/linux/fetch-native-tools.sh
-
-      - name: Run smoke tests
-        run: |
-          chmod +x build/linux/smoke-test.sh
-          ./build/linux/smoke-test.sh
-
-      - name: Upload Artifact
+          build/linux/generate-fixtures.sh
+          build/linux/smoke-test.sh
+      - name: Upload archive
         uses: actions/upload-artifact@v4
         with:
           name: streamextract-linux-x64
           path: /tmp/streamextract-linux-x64.tar.gz
+      - name: Upload release asset
+        if: github.event_name == 'release' && github.event.action == 'published'
+        uses: softprops/action-gh-release@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          files: /tmp/streamextract-linux-x64.tar.gz

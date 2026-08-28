@@ -79,10 +79,13 @@ streamextract/
     mkvmerge
     mkvextract
     MP4Box
+    MP4Box.bin
+    lib/                  # GPAC and resolved runtime libraries
+    mkvtoolnix-runtime/   # dereferenced MKVToolNix runtime files
   licenses/
     GPAC-LICENSE.txt
     MKVToolNix-LICENCE.txt
-  tools-manifest.json
+  tools-manifest.json     # every regular file under tools/ is listed
 ```
 
 The release workflow will:
@@ -94,8 +97,12 @@ The release workflow will:
 5. Extract only the required native tools and associated licenses.
 6. Place them under `tools/` using the expected logical filenames.
 7. Set executable permissions on the native tools and CLI launcher.
-8. Run archive smoke tests against the bundled tools.
-9. Create a portable `.tar.gz` release archive.
+8. Resolve and verify MP4Box's complete recursive ELF dependency closure,
+   copying only non-system dependencies and failing unresolved entries.
+9. Run archive smoke tests against the bundled tools and representative MKV and
+   MP4 fixtures, including real MP4Box media-info operation.
+10. Create a portable `.tar.gz` release archive and upload it to published
+    GitHub releases while retaining a workflow artifact for manual runs.
 
 The workflow must fail if a download, checksum verification, extraction step, permission step, or smoke test fails. Tool versions and URLs must be pinned rather than resolved from a mutable latest-release endpoint.
 
@@ -181,3 +188,8 @@ The current `ProcessRunnerTests` must be replaced or abstracted because they dir
 - Modified or missing bundled tools are rejected before processing input media.
 - Core, CLI, and Linux process tests pass without WinForms or Windows shell dependencies.
 - No Linux native binaries are committed to the repository.
+- Archive smoke tests accept newline-delimited fixture paths without unsafe
+  whitespace splitting and reject symlink/reparse-point parents for bundled
+  tools and artifacts.
+- The archive's portability assumes a compatible host Linux kernel and dynamic
+  loader; it does not bundle arbitrary system files.

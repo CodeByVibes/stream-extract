@@ -6,6 +6,9 @@ namespace StreamExtract.Tests;
 
 public sealed class NativeToolValidatorTests
 {
+    private static string Hash(string path) =>
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)));
+
     [Fact]
     public void ValidatesAValidTool()
     {
@@ -123,6 +126,165 @@ public sealed class NativeToolValidatorTests
         Assert.Equal(NativeToolValidationFailure.Duplicate, error.Failure);
     }
 
+    [Fact]
+    public void ValidatesBundledRuntimeArtifacts()
+    {
+        using var fixture = Fixture.Create();
+        var artifactDirectory = Path.Combine(fixture.DirectoryPath, "tools", "lib");
+        Directory.CreateDirectory(artifactDirectory);
+        var artifactPath = Path.Combine(artifactDirectory, "libgpac.so.12");
+        File.WriteAllText(artifactPath, "runtime library");
+        var artifact = new NativeToolManifestArtifact(
+            "tools/lib/libgpac.so.12", "test", NativeTool.CurrentRid, "test",
+            Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(artifactPath))), false);
+        var manifest = fixture.Manifest with { Artifacts = [artifact] };
+
+        NativeToolValidator.Validate(fixture.DirectoryPath, manifest);
+    }
+
+    [Fact]
+    public void RejectsMissingBundledRuntimeArtifact()
+    {
+        using var fixture = Fixture.Create();
+        var manifest = fixture.Manifest with
+        {
+            Artifacts = [new NativeToolManifestArtifact(
+                "tools/lib/missing.so", "test", NativeTool.CurrentRid, "test", new string('0', 64), false)]
+        };
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, manifest));
+
+        Assert.Equal(NativeToolValidationFailure.Missing, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsSymlinkedBundledRuntimeArtifact()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        using var fixture = Fixture.Create();
+        var targetPath = Path.Combine(fixture.DirectoryPath, "outside.so");
+        var artifactPath = Path.Combine(fixture.DirectoryPath, "tools", "libgpac.so.12");
+        File.WriteAllText(targetPath, "outside runtime library");
+        File.CreateSymbolicLink(artifactPath, targetPath);
+        var artifact = new NativeToolManifestArtifact(
+            "tools/libgpac.so.12", "test", NativeTool.CurrentRid, "test", Hash(targetPath), false);
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest with { Artifacts = [artifact] }));
+
+        Assert.Equal(NativeToolValidationFailure.InvalidPath, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsSymlinkedToolParentDirectory()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        using var fixture = Fixture.Create();
+        var realTools = Path.Combine(fixture.DirectoryPath, "real-tools");
+        Directory.Move(Path.Combine(fixture.DirectoryPath, "tools"), realTools);
+        File.CreateSymbolicLink(Path.Combine(fixture.DirectoryPath, "tools"), realTools);
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest));
+
+        Assert.Equal(NativeToolValidationFailure.InvalidPath, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsSymlinkedArtifactParentDirectory()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        using var fixture = Fixture.Create();
+        var realLib = Path.Combine(fixture.DirectoryPath, "real-lib");
+        Directory.CreateDirectory(realLib);
+        var artifactPath = Path.Combine(realLib, "runtime.so");
+        File.WriteAllText(artifactPath, "runtime library");
+        var toolsLib = Path.Combine(fixture.DirectoryPath, "tools", "lib");
+        File.CreateSymbolicLink(toolsLib, realLib);
+        var artifact = new NativeToolManifestArtifact(
+            "tools/lib/runtime.so", "test", NativeTool.CurrentRid, "test", Hash(artifactPath), false);
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest with { Artifacts = [artifact] }));
+
+        Assert.Equal(NativeToolValidationFailure.InvalidPath, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsArtifactHashMismatch()
+    {
+        using var fixture = Fixture.Create();
+        var artifactPath = Path.Combine(fixture.DirectoryPath, "tools", "libgpac.so.12");
+        File.WriteAllText(artifactPath, "runtime library");
+        var artifact = new NativeToolManifestArtifact(
+            "tools/libgpac.so.12", "test", NativeTool.CurrentRid, "test", new string('0', 64), false);
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest with { Artifacts = [artifact] }));
+
+        Assert.Equal(NativeToolValidationFailure.HashMismatch, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsArtifactMarkedExecutableWithoutExecutePermission()
+    {
+        if (OperatingSystem.IsWindows()) return;
+
+        using var fixture = Fixture.Create();
+        var artifactPath = Path.Combine(fixture.DirectoryPath, "tools", "runtime-helper");
+        File.WriteAllText(artifactPath, "runtime helper");
+        var artifact = new NativeToolManifestArtifact(
+            "tools/runtime-helper", "test", NativeTool.CurrentRid, "test", Hash(artifactPath), true);
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest with { Artifacts = [artifact] }));
+
+        Assert.Equal(NativeToolValidationFailure.NotExecutable, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsUnlistedRegularToolFile()
+    {
+        using var fixture = Fixture.Create();
+        var unlistedPath = Path.Combine(fixture.DirectoryPath, "tools", "unlisted-tool");
+        File.WriteAllText(unlistedPath, "unlisted");
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest));
+
+        Assert.Equal(NativeToolValidationFailure.InvalidManifest, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsLogicalToolAndArtifactSharingPath()
+    {
+        using var fixture = Fixture.Create();
+        var path = Path.Combine(fixture.DirectoryPath, "tools", NativeTool.GetFilename(NativeToolId.MkvMerge));
+        var artifact = new NativeToolManifestArtifact(
+            $"tools/{NativeTool.GetFilename(NativeToolId.MkvMerge)}", "test", NativeTool.CurrentRid, "test", Hash(path), true);
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest with { Artifacts = [artifact] }));
+
+        Assert.Equal(NativeToolValidationFailure.Duplicate, error.Failure);
+    }
+
+    [Fact]
+    public void RejectsDirectoryAtManifestedToolPath()
+    {
+        using var fixture = Fixture.Create(includeFile: false);
+        Directory.CreateDirectory(Path.Combine(fixture.DirectoryPath, "tools", NativeTool.GetFilename(NativeToolId.MkvMerge)));
+
+        var error = Assert.Throws<NativeToolValidationException>(() =>
+            NativeToolValidator.Validate(fixture.DirectoryPath, fixture.Manifest));
+
+        Assert.Equal(NativeToolValidationFailure.InvalidPath, error.Failure);
+    }
+
     private sealed class Fixture : IDisposable
     {
         public string DirectoryPath { get; }
@@ -159,5 +321,6 @@ public sealed class NativeToolValidatorTests
         }
 
         public void Dispose() => Directory.Delete(DirectoryPath, true);
+
     }
 }

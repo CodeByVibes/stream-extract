@@ -6,8 +6,9 @@
 StreamExtract is a WinForms application built with .NET 10. It wraps
 [MKVToolNix](https://mkvtoolnix.download/) (`mkvmerge`, `mkvextract`) and
 [GPAC](https://wiki.gpac.io/) (`mp4box`) to extract individual streams and
-metadata from media containers. All extraction runs the bundled native tools
-directly — no shell, no scripting.
+metadata from media containers. The application starts the bundled native
+tools directly without shell interpretation; the Linux archive uses small
+local launchers to set each tool's bundled library path.
 
 ## Features
 
@@ -68,8 +69,19 @@ tar -xzf streamextract-linux-x64.tar.gz
 cd streamextract
 ```
 
-The Linux release archive is self-contained. It includes the CLI and verified `mkvmerge`, `mkvextract`, and `MP4Box` Linux binaries. You do not need to install `.NET` or the native tools separately.
+The Linux release archive is self-contained for the supported `linux-x64`
+environment. It includes the CLI, verified `mkvmerge`, `mkvextract`, and
+`MP4Box` Linux binaries, and the runtime libraries required by those binaries.
+You do not need to install `.NET` or the native tools separately; the host
+still supplies the Linux kernel and dynamic loader.
 The release packaging process securely downloads pinned native tool versions, verifies their SHA-256 checksums, and bundles them.
+
+Packaging recursively verifies MP4Box's ELF dependency closure and includes only
+non-system libraries needed by the bundled binary. The archive still depends on
+the host Linux kernel and dynamic loader; portability is limited by the loader
+and kernel ABI supported by the build environment.
+
+The archive also contains `tools/mkvtoolnix-runtime/` and `tools/lib/`, which hold regular-file copies of the native runtime dependencies. `tools-manifest.json` records and validates every bundled file before the CLI processes media.
 
 > [!NOTE]
 > If you delete or relocate a bundled tool — or replace it with one whose
@@ -139,11 +151,19 @@ The build is warning-free.
 dotnet test
 ```
 
-Tests are headless xUnit tests targeting the pure helpers — path containment,
-request building, selection snapshotting, cue sheet generation, progress math,
-plugin command builders, update parsing, and the process failure/cancellation
-contracts. The bundled native tools are never invoked during tests; the process
-contracts are exercised against the cross-platform .NET `TestProcessHost` fixture.
+On Linux, run the portable test project directly:
+
+```bash
+dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj
+```
+
+The aggregate solution test command includes the Windows-only WinForms test
+project and therefore requires Windows. The portable tests are headless xUnit
+tests targeting the pure helpers — path containment, request building,
+selection snapshotting, cue sheet generation, progress math, plugin command
+builders, update parsing, and process failure/cancellation contracts. The
+bundled native tools are never invoked during tests; the process contracts are
+exercised against the cross-platform .NET `TestProcessHost` fixture.
 
 ## Architecture
 
@@ -174,7 +194,9 @@ Key design decisions:
   which are generated from the extracted chapter XML instead of calling
   `mkvextract`'s cuesheet mode (that mode has no per-track option).
 - At startup the app verifies the SHA-256 hash of every bundled tool and
-  refuses to start if one is missing or modified.
+  refuses to start if one is missing, modified, or reached through a symlink or
+  reparse-point path beneath the application directory. Bundled artifact files
+  are checked the same way.
 
 ## Contributing
 
