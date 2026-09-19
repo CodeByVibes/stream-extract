@@ -6,18 +6,22 @@ ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 PUBLISH_ROOT="${PUBLISH_ROOT:-/tmp/streamextract-publish}"
 STAGE_DIR="$PUBLISH_ROOT/streamextract"
 ARCHIVE_PATH="${ARCHIVE_PATH:-/tmp/streamextract-linux-x64.tar.gz}"
+APPIMAGE_PATH="${APPIMAGE_PATH:-/tmp/StreamExtract-x86_64.AppImage}"
 
 source "$SCRIPT_DIR/tool-versions.env"
 
-for command in curl sha256sum dotnet ar tar zstd find ldd readelf python3 unsquashfs file; do
+for command in curl sha256sum dotnet tar find python3 unsquashfs file gcc make strip; do
     command -v "$command" >/dev/null || { echo "Required utility is missing: $command" >&2; exit 1; }
 done
 
-rm -rf "$PUBLISH_ROOT" "$ARCHIVE_PATH"
-mkdir -p "$STAGE_DIR/tools/lib" "$STAGE_DIR/licenses"
+rm -rf "$PUBLISH_ROOT" "$ARCHIVE_PATH" "$APPIMAGE_PATH"
+mkdir -p "$STAGE_DIR/tools" "$STAGE_DIR/licenses"
 
 dotnet publish "$ROOT_DIR/StreamExtract.Cli/StreamExtract.Cli.csproj" \
     -c Release -r linux-x64 --self-contained true -o "$STAGE_DIR"
+DESKTOP_STAGE_DIR="$STAGE_DIR/desktop"
+dotnet publish "$ROOT_DIR/StreamExtract.Desktop/StreamExtract.Desktop.csproj" \
+    -c Release -r linux-x64 --self-contained true -o "$DESKTOP_STAGE_DIR"
 
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
@@ -49,77 +53,38 @@ printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     'exec "$DIR/mkvtoolnix-runtime/usr/bin/mkvextract" "$@"' > "$STAGE_DIR/tools/mkvextract"
 cp "$ROOT_DIR/licenses/MKVToolNix-LICENCE.txt" "$STAGE_DIR/licenses/"
 
-download_verified "$GPAC_URL" "$GPAC_SHA256" "$WORKDIR/gpac.deb"
-download_verified "$LIBGPAC_URL" "$LIBGPAC_SHA256" "$WORKDIR/libgpac.deb"
-mkdir -p "$WORKDIR/gpac" "$WORKDIR/libgpac"
-(
-    cd "$WORKDIR/gpac"
-    ar -x "$WORKDIR/gpac.deb"
-)
-(
-    cd "$WORKDIR/libgpac"
-    ar -x "$WORKDIR/libgpac.deb"
-)
-tar --zstd -xf "$WORKDIR/gpac/data.tar.zst" -C "$WORKDIR/gpac" ./usr/bin/MP4Box
-tar --zstd -xf "$WORKDIR/libgpac/data.tar.zst" -C "$WORKDIR/libgpac" ./usr/lib
-test -x "$WORKDIR/gpac/usr/bin/MP4Box"
-cp "$WORKDIR/gpac/usr/bin/MP4Box" "$STAGE_DIR/tools/MP4Box.bin"
-mapfile -t packaged_gpac_libraries < <(find "$WORKDIR/libgpac/usr/lib" -type f -name 'libgpac.so*' -print | sort)
-test "${#packaged_gpac_libraries[@]}" -gt 0
-for library in "${packaged_gpac_libraries[@]}"; do
-    cp -L "$library" "$STAGE_DIR/tools/lib/$(basename "$library")"
-done
-gpac_library="${packaged_gpac_libraries[0]}"
-soname="$(readelf -d "$STAGE_DIR/tools/lib/$(basename "$gpac_library")" | awk -F'[][]' '/SONAME/ { print $2; exit }')"
-test -n "$soname"
-if [[ "$soname" != "$(basename "$gpac_library")" ]]; then
-    cp -L "$STAGE_DIR/tools/lib/$(basename "$gpac_library")" "$STAGE_DIR/tools/lib/$soname"
-fi
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/streamextract"
+CACHED_MP4BOX="$CACHE_DIR/MP4Box-$GPAC_VERSION-$GPAC_SOURCE_SHA256"
 
-resolve_elf_dependencies() {
-    local pending=("$1") index=0 elf dependency resolved destination ldd_output ldd_status
-    declare -A visited=()
-    while (( index < ${#pending[@]} )); do
-        elf="${pending[index++]}"
-        [[ -n "${visited[$elf]:-}" ]] && continue
-        visited["$elf"]=1
-        if ldd_output="$(LD_LIBRARY_PATH="$STAGE_DIR/tools/lib" ldd "$elf" 2>&1)"; then
-            ldd_status=0
-        else
-            ldd_status=$?
-        fi
-        if (( ldd_status != 0 )); then
-            echo "ldd failed for $elf (status $ldd_status): $ldd_output" >&2
-            return 1
-        fi
-        while IFS= read -r dependency; do
-            [[ -n "$dependency" ]] || continue
-            if [[ "$dependency" == *"not found"* ]]; then
-                echo "Unresolved MP4Box dependency for $elf: $dependency" >&2
-                return 1
-            fi
-            resolved="${dependency##*=> }"
-            resolved="${resolved%% (*}"
-            [[ "$resolved" == /* && -f "$resolved" ]] || continue
-            if [[ "$resolved" == /lib/* || "$resolved" == /usr/lib/* ||
-                  "$resolved" == /lib64/* || "$resolved" == /usr/lib64/* ]]; then
-                continue
-            fi
-            destination="$STAGE_DIR/tools/lib/$(basename "$resolved")"
-            [[ -f "$destination" ]] || cp -L "$resolved" "$destination"
-            pending+=("$destination")
-        done <<< "$ldd_output"
-    done
-}
-resolve_elf_dependencies "$STAGE_DIR/tools/MP4Box.bin"
-printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
-    'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
-    'export LD_LIBRARY_PATH="$DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"' \
-    'exec "$DIR/MP4Box.bin" "$@"' > "$STAGE_DIR/tools/MP4Box"
+if [[ -x "${MP4BOX_OVERRIDE:-}" ]]; then
+    echo "Using MP4Box from MP4BOX_OVERRIDE: $MP4BOX_OVERRIDE"
+    cp "$MP4BOX_OVERRIDE" "$STAGE_DIR/tools/MP4Box"
+elif [[ -x "$CACHED_MP4BOX" ]]; then
+    echo "Using cached static MP4Box: $CACHED_MP4BOX"
+    cp "$CACHED_MP4BOX" "$STAGE_DIR/tools/MP4Box"
+else
+    echo "Building static MP4Box from $GPAC_SOURCE_URL..."
+    download_verified "$GPAC_SOURCE_URL" "$GPAC_SOURCE_SHA256" "$WORKDIR/gpac.tar.gz"
+    mkdir -p "$WORKDIR/gpac"
+    tar -xzf "$WORKDIR/gpac.tar.gz" -C "$WORKDIR/gpac" --strip-components=1
+    (
+        cd "$WORKDIR/gpac"
+        ./configure --static-bin \
+            --use-zlib=no --use-freetype=no --use-mad=no --use-a52=no --use-nghttp2=no \
+            --use-jpeg=no --use-png=no --use-faad=no --use-xvid=no --use-ffmpeg=no \
+            --use-vorbis=no --use-theora=no --use-ssl=no
+        make -j"$(nproc)"
+        strip --strip-all bin/gcc/MP4Box
+    )
+    mkdir -p "$CACHE_DIR"
+    cp "$WORKDIR/gpac/bin/gcc/MP4Box" "$CACHED_MP4BOX"
+    cp "$CACHED_MP4BOX" "$STAGE_DIR/tools/MP4Box"
+fi
+chmod 0755 "$STAGE_DIR/tools/MP4Box"
 cp "$ROOT_DIR/licenses/GPAC-LICENSE.txt" "$STAGE_DIR/licenses/"
 
 chmod 0755 "$STAGE_DIR/streamextract" "$STAGE_DIR/tools/mkvmerge" "$STAGE_DIR/tools/mkvextract" \
-    "$STAGE_DIR/tools/MP4Box" "$STAGE_DIR/tools/MP4Box.bin" "$STAGE_DIR/tools/mkvtoolnix.AppImage"
+    "$STAGE_DIR/tools/MP4Box" "$STAGE_DIR/tools/mkvtoolnix.AppImage"
 if find "$STAGE_DIR/tools" -type l -print -quit | grep -q .; then
     echo "Packaging produced a symlink; expected regular files only" >&2
     exit 1
@@ -149,7 +114,7 @@ extract_hash="$(sha256sum "$STAGE_DIR/tools/mkvextract" | awk '{print $1}')"
 mp4box_hash="$(sha256sum "$STAGE_DIR/tools/MP4Box" | awk '{print $1}')"
 python3 - "$ROOT_DIR/StreamExtract.Cli/tools-manifest.json" "$artifacts_file" "$STAGE_DIR/tools-manifest.json" \
     "$MKVTOOLNIX_VERSION" "$MKVTOOLNIX_URL" "$merge_hash" "$extract_hash" \
-    "$GPAC_VERSION" "$GPAC_URL" "$mp4box_hash" <<'PY'
+    "$GPAC_VERSION" "$GPAC_SOURCE_URL" "$mp4box_hash" <<'PY'
 import json
 import sys
 
@@ -177,6 +142,27 @@ json.dump(manifest, open(output, "w", encoding="utf-8"), indent=2)
 open(output, "a", encoding="utf-8").write("\n")
 PY
 
+# The desktop app is published separately, so give it the same complete,
+# verified native-tool bundle relative to its own AppContext.BaseDirectory.
+cp "$STAGE_DIR/tools-manifest.json" "$DESKTOP_STAGE_DIR/tools-manifest.json"
+cp -rL --preserve=mode,timestamps "$STAGE_DIR/tools" "$DESKTOP_STAGE_DIR/tools"
+cp -rL --preserve=mode,timestamps "$STAGE_DIR/licenses" "$DESKTOP_STAGE_DIR/licenses"
+chmod 0755 "$DESKTOP_STAGE_DIR/StreamExtract.Desktop"
+
 tar -C "$PUBLISH_ROOT" --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner \
     -czf "$ARCHIVE_PATH" streamextract
+
+APPDIR="$WORKDIR/StreamExtract.AppDir"
+mkdir -p "$APPDIR/usr/bin"
+cp "$ROOT_DIR/build/linux/AppRun" "$APPDIR/AppRun"
+cp "$ROOT_DIR/build/linux/StreamExtract.desktop" "$APPDIR/StreamExtract.desktop"
+cp "$ROOT_DIR/StreamExtract.Desktop/Assets/app_logo.png" "$APPDIR/StreamExtract.png"
+cp -rL --preserve=mode,timestamps "$DESKTOP_STAGE_DIR"/* "$APPDIR/usr/bin/"
+chmod 0755 "$APPDIR/AppRun" "$APPDIR/usr/bin/StreamExtract.Desktop"
+download_verified "$APPIMAGETOOL_URL" "$APPIMAGETOOL_SHA256" "$WORKDIR/appimagetool.AppImage"
+chmod 0755 "$WORKDIR/appimagetool.AppImage"
+APPIMAGE_EXTRACT_AND_RUN=1 "$WORKDIR/appimagetool.AppImage" "$APPDIR" "$APPIMAGE_PATH"
+chmod 0755 "$APPIMAGE_PATH"
+
 echo "Archive created at $ARCHIVE_PATH"
+echo "AppImage created at $APPIMAGE_PATH"

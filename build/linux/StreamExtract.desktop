@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=StreamExtract
+Comment=Extract tracks and metadata from media containers
+Exec=StreamExtract.Desktop
+Icon=StreamExtract
+Terminal=false
+Categories=AudioVideo;AudioVideoEditing;
+StartupNotify=true

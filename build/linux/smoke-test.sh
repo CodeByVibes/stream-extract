@@ -2,16 +2,20 @@
 set -euo pipefail
 
 ARCHIVE="${ARCHIVE_PATH:-/tmp/streamextract-linux-x64.tar.gz}"
+APPIMAGE="${APPIMAGE_PATH:-/tmp/StreamExtract-x86_64.AppImage}"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
 test -f "$ARCHIVE"
+test -x "$APPIMAGE"
 tar -tzf "$ARCHIVE" > "$TEST_DIR/archive.list"
 grep -Fx 'streamextract/' "$TEST_DIR/archive.list"
 for path in streamextract/streamextract streamextract/tools/mkvmerge streamextract/tools/mkvextract \
-    streamextract/tools/MP4Box streamextract/tools/MP4Box.bin streamextract/tools/mkvtoolnix.AppImage \
+    streamextract/tools/MP4Box streamextract/tools/mkvtoolnix.AppImage \
     streamextract/licenses/GPAC-LICENSE.txt streamextract/licenses/MKVToolNix-LICENCE.txt \
-    streamextract/tools-manifest.json; do
+    streamextract/tools-manifest.json streamextract/desktop/tools/mkvmerge \
+    streamextract/desktop/tools/mkvextract streamextract/desktop/tools/MP4Box \
+    streamextract/desktop/tools-manifest.json; do
     grep -Fx "$path" "$TEST_DIR/archive.list"
 done
 if grep -Ev '^streamextract(/|$)' "$TEST_DIR/archive.list"; then
@@ -21,10 +25,11 @@ fi
 
 tar -xzf "$ARCHIVE" -C "$TEST_DIR"
 ROOT="$TEST_DIR/streamextract"
-for path in streamextract tools/mkvmerge tools/mkvextract tools/MP4Box; do
+for path in streamextract tools/mkvmerge tools/mkvextract tools/MP4Box \
+    desktop/StreamExtract.Desktop desktop/tools/mkvmerge desktop/tools/mkvextract desktop/tools/MP4Box; do
     test -x "$ROOT/$path" || { echo "Not executable: $path" >&2; exit 1; }
 done
-if find "$ROOT/tools" -type l -print -quit | grep -q .; then
+if find "$ROOT/tools" "$ROOT/desktop/tools" -type l -print -quit | grep -q .; then
     echo "Archive contains symlinks" >&2
     exit 1
 fi
@@ -34,6 +39,9 @@ export PATH
 "$ROOT/tools/mkvmerge" --version
 "$ROOT/tools/mkvextract" --version
 "$ROOT/tools/MP4Box" -version
+"$ROOT/desktop/tools/mkvmerge" --version
+"$ROOT/desktop/tools/mkvextract" --version
+"$ROOT/desktop/tools/MP4Box" -version
 check_ldd() {
     local library_path="$1" elf="$2" output status
     if output="$(LD_LIBRARY_PATH="$library_path" ldd "$elf" 2>&1)"; then
@@ -47,7 +55,10 @@ check_ldd() {
         exit 1
     fi
 }
-check_ldd "$ROOT/tools/lib" "$ROOT/tools/MP4Box.bin"
+if readelf -d "$ROOT/tools/MP4Box" 2>/dev/null | grep -q 'DYNAMIC'; then
+    echo "Expected MP4Box to be a static binary, but found dynamic section" >&2
+    exit 1
+fi
 check_ldd "$ROOT/tools/mkvtoolnix-runtime/usr/lib" "$ROOT/tools/mkvtoolnix-runtime/usr/bin/mkvmerge"
 check_ldd "$ROOT/tools/mkvtoolnix-runtime/usr/lib" "$ROOT/tools/mkvtoolnix-runtime/usr/bin/mkvextract"
 "$ROOT/streamextract" --help
@@ -97,9 +108,28 @@ for fixture in "${fixtures[@]}"; do
 done
 [[ "$has_mkv" == true ]] || { echo "Smoke test requires at least one MKV fixture" >&2; exit 1; }
 [[ "$has_mp4" == true ]] || { echo "Smoke test requires at least one MP4 fixture" >&2; exit 1; }
-for elf in "$ROOT/tools/MP4Box.bin" "$ROOT/tools/lib"/*; do
-    [[ -f "$elf" ]] || continue
-    readelf -h "$elf" 2>/dev/null | grep -q 'ELF' || continue
-    check_ldd "$ROOT/tools/lib" "$elf"
+APPIMAGE_DIR="$TEST_DIR/appimage"
+mkdir "$APPIMAGE_DIR"
+(
+    cd "$APPIMAGE_DIR"
+    APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" --appimage-extract >/dev/null
+)
+APPROOT="$APPIMAGE_DIR/squashfs-root"
+for path in AppRun usr/bin/StreamExtract.Desktop usr/bin/tools/mkvmerge usr/bin/tools/mkvextract usr/bin/tools/MP4Box usr/bin/tools-manifest.json; do
+    test -e "$APPROOT/$path" || { echo "Missing AppImage path: $path" >&2; exit 1; }
 done
+for path in AppRun usr/bin/StreamExtract.Desktop usr/bin/tools/mkvmerge usr/bin/tools/mkvextract usr/bin/tools/MP4Box; do
+    test -x "$APPROOT/$path" || { echo "Not executable in AppImage: $path" >&2; exit 1; }
+done
+"$APPROOT/usr/bin/tools/mkvmerge" --version
+"$APPROOT/usr/bin/tools/mkvextract" --version
+"$APPROOT/usr/bin/tools/MP4Box" -version
+
+if [[ -d "$ROOT/tools/lib" ]]; then
+    for elf in "$ROOT/tools/lib"/*; do
+        [[ -f "$elf" ]] || continue
+        readelf -h "$elf" 2>/dev/null | grep -q 'ELF' || continue
+        check_ldd "$ROOT/tools/lib" "$elf"
+    done
+fi
 echo "Smoke test passed."
