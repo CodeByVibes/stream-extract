@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -24,6 +24,7 @@
   <ItemGroup>
     <Compile Remove="StreamExtract.Core\**" />
     <Compile Remove="StreamExtract.Cli\**" />
+    <Compile Remove="StreamExtract.Desktop\**" />
   </ItemGroup>
 
   <ItemGroup>

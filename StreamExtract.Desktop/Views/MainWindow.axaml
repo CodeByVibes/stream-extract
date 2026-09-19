@@ -1,0 +1,186 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:StreamExtract.Desktop.ViewModels"
+        xmlns:conv="using:StreamExtract.Desktop.Converters"
+        mc:Ignorable="d" d:DesignWidth="960" d:DesignHeight="640"
+        x:Class="StreamExtract.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="StreamExtract"
+        Width="960" Height="640"
+        MinWidth="720" MinHeight="480"
+        WindowStartupLocation="CenterScreen"
+        Icon="/Assets/AppIcon.ico"
+        DragDrop.AllowDrop="True">
+
+  <Window.Resources>
+    <conv:IconKeyToBitmapConverter x:Key="IconKeyToBitmapConverter" />
+  </Window.Resources>
+
+  <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="12" DragDrop.AllowDrop="True">
+    
+    <!-- Top Action Bar -->
+    <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" Margin="0,0,0,10">
+      <Button Grid.Column="0"
+              Content="📁 Open files"
+              Command="{Binding OpenFilesCommand}"
+              Padding="12,6"
+              Margin="0,0,8,0" />
+      <Button Grid.Column="1"
+              Content="ℹ️ About"
+              Command="{Binding ShowAboutCommand}"
+              Padding="12,6" />
+      
+      <!-- New Version Button -->
+      <Button Grid.Column="3"
+              Content="✨ New Version Available!"
+              Command="{Binding OpenUpdateLinkCommand}"
+              IsVisible="{Binding IsUpdateAvailable}"
+              Background="{DynamicResource SystemAccentColor}"
+              Foreground="White"
+              FontWeight="SemiBold"
+              Padding="12,6" />
+    </Grid>
+
+    <!-- Output Directory Settings -->
+    <Border Grid.Row="1"
+            BorderBrush="{DynamicResource SystemControlHighlightListLowBrush}"
+            BorderThickness="1"
+            CornerRadius="4"
+            Padding="10"
+            Margin="0,0,0,10"
+            Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+      <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+        <CheckBox Grid.Row="0" Grid.ColumnSpan="3"
+                  Content="Use source directory"
+                  IsChecked="{Binding UseSourceDirectory}"
+                  Margin="0,0,0,6" />
+        
+        <TextBlock Grid.Row="1" Grid.Column="0"
+                   Text="Output Directory:"
+                   VerticalAlignment="Center"
+                   Margin="0,0,8,0" />
+        <TextBox Grid.Row="1" Grid.Column="1"
+                 Text="{Binding SelectedOutputDirectory}"
+                 IsEnabled="{Binding !UseSourceDirectory}"
+                 Margin="0,0,8,0" />
+        <Button Grid.Row="1" Grid.Column="2"
+                Content="Browse..."
+                Command="{Binding BrowseOutputDirectoryCommand}"
+                IsEnabled="{Binding !UseSourceDirectory}"
+                Padding="12,6" />
+      </Grid>
+    </Border>
+
+    <!-- Main Content: Splitter with File Tree and Log Console -->
+    <Grid Grid.Row="2" ColumnDefinitions="3*,4,2*">
+      <!-- File Tree -->
+      <Border Grid.Column="0"
+              BorderBrush="{DynamicResource SystemControlHighlightListLowBrush}"
+              BorderThickness="1"
+              DragDrop.AllowDrop="True"
+              CornerRadius="4">
+        <Grid RowDefinitions="Auto,*">
+          <Border Grid.Row="0"
+                  Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                  Padding="8,6"
+                  BorderBrush="{DynamicResource SystemControlHighlightListLowBrush}"
+                  BorderThickness="0,0,0,1">
+            <TextBlock Text="Files and Streams (Drag and drop supported)"
+                       FontWeight="SemiBold"
+                       FontSize="12" />
+          </Border>
+
+          <TreeView Grid.Row="1"
+                    ItemsSource="{Binding FileNodes}"
+                    x:Name="FilesTreeView"
+                    DragDrop.AllowDrop="True"
+                    Margin="4">
+            <TreeView.ItemTemplate>
+              <TreeDataTemplate DataType="vm:FileNodeViewModel" ItemsSource="{Binding Children}">
+                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                  <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                            IsThreeState="True"
+                            VerticalAlignment="Center"
+                            Margin="0,0,2,0" />
+                  <Image Source="{Binding IconKey, Converter={StaticResource IconKeyToBitmapConverter}}"
+                         Width="16" Height="16"
+                         VerticalAlignment="Center" />
+                  <TextBlock Text="{Binding Title}"
+                             VerticalAlignment="Center" />
+                </StackPanel>
+              </TreeDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+        </Grid>
+      </Border>
+
+      <!-- Splitter -->
+      <GridSplitter Grid.Column="1" Background="Transparent" ResizeDirection="Columns" />
+
+      <!-- Log Output -->
+      <Border Grid.Column="2"
+              BorderBrush="{DynamicResource SystemControlHighlightListLowBrush}"
+              BorderThickness="1"
+              CornerRadius="4">
+        <Grid RowDefinitions="Auto,*">
+          <Border Grid.Row="0"
+                  Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+                  Padding="8,6"
+                  BorderBrush="{DynamicResource SystemControlHighlightListLowBrush}"
+                  BorderThickness="0,0,0,1">
+            <TextBlock Text="Log / Diagnostics"
+                       FontWeight="SemiBold"
+                       FontSize="12" />
+          </Border>
+          <TextBox Grid.Row="1"
+                   Text="{Binding LogOutput}"
+                   x:Name="LogTextBox"
+                   IsReadOnly="True"
+                   AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   FontFamily="Monospace,Consolas,Courier New"
+                   FontSize="12"
+                   BorderThickness="0" />
+        </Grid>
+      </Border>
+    </Grid>
+
+    <!-- Bottom Controls & Progress -->
+    <Grid Grid.Row="3" ColumnDefinitions="Auto,Auto,*" Margin="0,10,0,6">
+      <Button Grid.Column="0"
+              Content="⚡ Extract"
+              Command="{Binding ExtractCommand}"
+              IsEnabled="{Binding CanExtract}"
+              Classes="accent"
+              FontWeight="Bold"
+              Padding="20,8"
+              Margin="0,0,8,0" />
+      <Button Grid.Column="1"
+              Content="✖ Cancel"
+              Command="{Binding CancelCommand}"
+              IsVisible="{Binding IsExtracting}"
+              Padding="14,8"
+              Margin="0,0,12,0" />
+      <ProgressBar Grid.Column="2"
+                   Value="{Binding ProgressPercentage}"
+                   Minimum="0" Maximum="100"
+                   Height="24"
+                   ShowProgressText="True"
+                   VerticalAlignment="Center"
+                   IsVisible="{Binding IsExtracting}" />
+    </Grid>
+
+    <!-- Status Bar -->
+    <Border Grid.Row="4"
+            Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+            Padding="8,4"
+            CornerRadius="3">
+      <TextBlock Text="{Binding StatusText}"
+                 FontSize="12"
+                 Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+    </Border>
+
+  </Grid>
+</Window>

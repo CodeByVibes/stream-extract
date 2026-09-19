@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="StreamExtract.Core\StreamExtract.Core.csproj" />
   <Project Path="StreamExtract.Cli\StreamExtract.Cli.csproj" />
+  <Project Path="StreamExtract.Desktop\StreamExtract.Desktop.csproj" />
   <Project Path="stream-extract-winforms.csproj" />
   <Project Path="tests\StreamExtract.Tests\StreamExtract.Tests.csproj" />
   <Project Path="tests\StreamExtract.WinForms.Tests\StreamExtract.WinForms.Tests.csproj" />

@@ -1,0 +1,18 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="StreamExtract.Desktop.App"
+             RequestedThemeVariant="Light">
+  <Application.Resources>
+    <SolidColorBrush x:Key="StreamExtractWindowBackgroundBrush" Color="#F1F2F4" />
+    <SolidColorBrush x:Key="StreamExtractPanelBackgroundBrush" Color="#E5E7EB" />
+    <SolidColorBrush x:Key="StreamExtractBorderBrush" Color="#CBD0D6" />
+    <SolidColorBrush x:Key="StreamExtractTextBrush" Color="#20242A" />
+  </Application.Resources>
+  <Application.Styles>
+    <FluentTheme />
+    <Style Selector="Window">
+      <Setter Property="Background" Value="{DynamicResource StreamExtractWindowBackgroundBrush}" />
+      <Setter Property="Foreground" Value="{DynamicResource StreamExtractTextBrush}" />
+    </Style>
+  </Application.Styles>
+</Application>
