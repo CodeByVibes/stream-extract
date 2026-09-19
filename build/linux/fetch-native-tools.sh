@@ -3,10 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-PUBLISH_ROOT="${PUBLISH_ROOT:-/tmp/streamextract-publish}"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
+PUBLISH_ROOT="${PUBLISH_ROOT:-$DIST_DIR/publish}"
 STAGE_DIR="$PUBLISH_ROOT/streamextract"
-ARCHIVE_PATH="${ARCHIVE_PATH:-/tmp/streamextract-linux-x64.tar.gz}"
-APPIMAGE_PATH="${APPIMAGE_PATH:-/tmp/StreamExtract-x86_64.AppImage}"
+ARCHIVE_PATH="${ARCHIVE_PATH:-$DIST_DIR/streamextract-linux-x64.tar.gz}"
+APPIMAGE_PATH="${APPIMAGE_PATH:-$DIST_DIR/StreamExtract-x86_64.AppImage}"
 
 source "$SCRIPT_DIR/tool-versions.env"
 

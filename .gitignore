@@ -62,6 +62,9 @@ artifacts/
 ## Publish output
 publish/
 
+## Linux packaging output (staged bundle, archive, AppImage, fixtures)
+/dist/
+
 ## Windows Installer
 *.cab
 *.msi

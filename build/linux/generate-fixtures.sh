@@ -3,8 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-PUBLISH_ROOT="${PUBLISH_ROOT:-/tmp/streamextract-publish}"
-FIXTURE_DIR="${FIXTURE_DIR:-/tmp/streamextract-fixtures}"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
+PUBLISH_ROOT="${PUBLISH_ROOT:-$DIST_DIR/publish}"
+FIXTURE_DIR="${FIXTURE_DIR:-$DIST_DIR/fixtures}"
 MP4BOX="${MP4BOX:-$PUBLISH_ROOT/streamextract/tools/MP4Box}"
 MKVMERGE="${MKVMERGE:-$PUBLISH_ROOT/streamextract/tools/mkvmerge}"
 SOURCE_SUBTITLE="$ROOT_DIR/tests/fixtures/smoke.srt"

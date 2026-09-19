@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       SMOKE_FIXTURES: |
-        /tmp/streamextract-fixtures/sample.mp4
-        /tmp/streamextract-fixtures/sample.mkv
+        ${{ github.workspace }}/dist/fixtures/sample.mp4
+        ${{ github.workspace }}/dist/fixtures/sample.mkv
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -33,13 +33,13 @@ jobs:
         with:
           name: streamextract-linux-x64
           path: |
-            /tmp/streamextract-linux-x64.tar.gz
-            /tmp/StreamExtract-x86_64.AppImage
+            dist/streamextract-linux-x64.tar.gz
+            dist/StreamExtract-x86_64.AppImage
       - name: Upload release asset
         if: github.event_name == 'release' && github.event.action == 'published'
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            /tmp/streamextract-linux-x64.tar.gz
-            /tmp/StreamExtract-x86_64.AppImage
+            dist/streamextract-linux-x64.tar.gz
+            dist/StreamExtract-x86_64.AppImage

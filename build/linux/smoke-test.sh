@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ARCHIVE="${ARCHIVE_PATH:-/tmp/streamextract-linux-x64.tar.gz}"
-APPIMAGE="${APPIMAGE_PATH:-/tmp/StreamExtract-x86_64.AppImage}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
+ARCHIVE="${ARCHIVE_PATH:-$DIST_DIR/streamextract-linux-x64.tar.gz}"
+APPIMAGE="${APPIMAGE_PATH:-$DIST_DIR/StreamExtract-x86_64.AppImage}"
 TEST_DIR="$(mktemp -d)"
 trap 'rm -rf "$TEST_DIR"' EXIT
 
