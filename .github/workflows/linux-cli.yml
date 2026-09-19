@@ -21,21 +21,25 @@ jobs:
         with:
           dotnet-version: 10.x
       - name: Install packaging dependencies
-        run: sudo apt-get update && sudo apt-get install --yes binutils curl squashfs-tools tar zstd
+        run: sudo apt-get update && sudo apt-get install --yes binutils build-essential curl squashfs-tools tar
       - name: Validate and package
         run: build/linux/fetch-native-tools.sh
       - name: Smoke test
         run: |
           build/linux/generate-fixtures.sh
           build/linux/smoke-test.sh
-      - name: Upload archive
+      - name: Upload Linux packages
         uses: actions/upload-artifact@v4
         with:
           name: streamextract-linux-x64
-          path: /tmp/streamextract-linux-x64.tar.gz
+          path: |
+            /tmp/streamextract-linux-x64.tar.gz
+            /tmp/StreamExtract-x86_64.AppImage
       - name: Upload release asset
         if: github.event_name == 'release' && github.event.action == 'published'
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          files: /tmp/streamextract-linux-x64.tar.gz
+          files: |
+            /tmp/streamextract-linux-x64.tar.gz
+            /tmp/StreamExtract-x86_64.AppImage
