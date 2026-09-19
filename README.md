@@ -31,7 +31,7 @@ archive uses local launchers to set each tool's bundled library path.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build
   from source
 - Windows (the app is `net10.0-windows` and uses WinForms)
-- Linux (`linux-x64` for the CLI; requires no separate .NET or native-tool installation)
+- Linux (`linux-x64` for the CLI and desktop app; requires no separate .NET or native-tool installation)
 
 The native tools are bundled (Windows tools are in `tools/`, Linux tools are in the release archive) and required at runtime:
 
@@ -60,7 +60,19 @@ The build copies `tools/` and `licenses/` into the output directory. Launch the
 app from there, or run the produced `stream-extract-winforms.exe`.
 
 
-### Linux CLI
+### Linux desktop
+
+Download `StreamExtract-x86_64.AppImage`, make it executable, and launch it:
+
+```bash
+chmod +x StreamExtract-x86_64.AppImage
+./StreamExtract-x86_64.AppImage
+```
+
+The AppImage is self-contained and includes the desktop application, bundled
+native tools, and their runtime libraries.
+
+### Linux CLI and portable desktop bundle
 
 Download the `linux-x64` release archive (`streamextract-linux-x64.tar.gz`) and extract it:
 
@@ -81,7 +93,13 @@ non-system libraries needed by the bundled binary. The archive still depends on
 the host Linux kernel and dynamic loader; portability is limited by the loader
 and kernel ABI supported by the build environment.
 
-The archive also contains `tools/mkvtoolnix-runtime/` and `tools/lib/`, which hold regular-file copies of the native runtime dependencies. `tools-manifest.json` records and validates every bundled file before the CLI processes media.
+The archive also contains `tools/mkvtoolnix-runtime/` and `tools/lib/`, which hold regular-file copies of the native runtime dependencies. `tools-manifest.json` records and validates every bundled file before the CLI or desktop app processes media.
+
+The Linux archive includes the self-contained Avalonia desktop app under
+`desktop/`. Launch `desktop/StreamExtract.Desktop`; its `tools/` directory is
+copied beside it so importing media works without relying on the current
+working directory or system-installed MKVToolNix. Releases contain both this
+portable archive and the one-file AppImage.
 
 > [!NOTE]
 > If you delete or relocate a bundled tool — or replace it with one whose

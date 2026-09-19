@@ -79,8 +79,6 @@ streamextract/
     mkvmerge
     mkvextract
     MP4Box
-    MP4Box.bin
-    lib/                  # GPAC and resolved runtime libraries
     mkvtoolnix-runtime/   # dereferenced MKVToolNix runtime files
   licenses/
     GPAC-LICENSE.txt
@@ -97,8 +95,7 @@ The release workflow will:
 5. Extract only the required native tools and associated licenses.
 6. Place them under `tools/` using the expected logical filenames.
 7. Set executable permissions on the native tools and CLI launcher.
-8. Resolve and verify MP4Box's complete recursive ELF dependency closure,
-   copying only non-system dependencies and failing unresolved entries.
+8. Build or verify a standalone static MP4Box binary with zero dynamic library dependencies.
 9. Run archive smoke tests against the bundled tools and representative MKV and
    MP4 fixtures, including real MP4Box media-info operation.
 10. Create a portable `.tar.gz` release archive and upload it to published
