@@ -3,12 +3,13 @@
 > A desktop and CLI tool for extracting tracks, chapters, attachments, tags,
 > cue sheets, and timestamps from MKV and MP4 files.
 
-StreamExtract provides a Windows desktop GUI (WinForms) and a Linux command-line
-interface built with .NET 10. It wraps [MKVToolNix](https://mkvtoolnix.download/)
-(`mkvmerge`, `mkvextract`) and [GPAC](https://wiki.gpac.io/) (`mp4box`) to
-extract individual streams and metadata from media containers. The application
-starts the bundled native tools directly without shell interpretation; the Linux
-archive uses local launchers to set each tool's bundled library path.
+StreamExtract provides a Windows desktop GUI (WinForms), a cross-platform
+Avalonia desktop app, and a command-line interface built with .NET 10. It wraps
+[MKVToolNix](https://mkvtoolnix.download/) (`mkvmerge`, `mkvextract`) and
+[GPAC](https://wiki.gpac.io/) (`mp4box`) to extract individual streams and
+metadata from media containers. The application starts the bundled native tools
+directly without shell interpretation; the Linux archive uses local launchers to
+set each tool's bundled library path.
 
 ## Features
 
@@ -30,7 +31,7 @@ archive uses local launchers to set each tool's bundled library path.
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build
   from source
-- Windows (the app is `net10.0-windows` and uses WinForms)
+- Windows (for the WinForms GUI; it targets `net10.0-windows`)
 - Linux (`linux-x64` for the CLI and desktop app; requires no separate .NET or native-tool installation)
 
 The native tools are bundled (Windows tools are in `tools/`, Linux tools are in the release archive) and required at runtime:
@@ -70,7 +71,9 @@ chmod +x StreamExtract-x86_64.AppImage
 ```
 
 The AppImage is self-contained and includes the desktop application, bundled
-native tools, and their runtime libraries.
+native tools, and their runtime libraries. To build it yourself, see
+[Linux Packaging & Smoke Tests](#linux-packaging--smoke-tests); the result is
+written to `dist/StreamExtract-x86_64.AppImage`.
 
 ### Linux CLI and portable desktop bundle
 
@@ -83,17 +86,20 @@ cd streamextract
 
 The Linux release archive is self-contained for the supported `linux-x64`
 environment. It includes the CLI, verified `mkvmerge`, `mkvextract`, and
-`MP4Box` Linux binaries, and the runtime libraries required by those binaries.
-You do not need to install `.NET` or the native tools separately; the host
+`MP4Box` Linux binaries, and the MKVToolNix runtime libraries those binaries
+need. You do not need to install `.NET` or the native tools separately; the host
 still supplies the Linux kernel and dynamic loader.
 The release packaging process securely downloads pinned native tool versions, verifies their SHA-256 checksums, and bundles them.
 
-Packaging recursively verifies MP4Box's ELF dependency closure and includes only
-non-system libraries needed by the bundled binary. The archive still depends on
-the host Linux kernel and dynamic loader; portability is limited by the loader
-and kernel ABI supported by the build environment.
+Packaging builds a fully static `MP4Box` from the pinned GPAC source release, so
+the bundled binary has no dynamic library dependencies of its own. Only the
+MKVToolNix runtime libraries are bundled (`tools/mkvtoolnix-runtime/`); there is
+no `tools/lib/` directory. The archive still depends on the host Linux kernel and
+dynamic loader; portability is limited by the loader and kernel ABI supported by
+the build environment.
 
-The archive also contains `tools/mkvtoolnix-runtime/` and `tools/lib/`, which hold regular-file copies of the native runtime dependencies. `tools-manifest.json` records and validates every bundled file before the CLI or desktop app processes media.
+`tools-manifest.json` records and validates every bundled file — including each
+MKVToolNix runtime file — before the CLI or desktop app processes media.
 
 The Linux archive includes the self-contained Avalonia desktop app under
 `desktop/`. Launch `desktop/StreamExtract.Desktop`; its `tools/` directory is
@@ -193,21 +199,36 @@ exercised against the cross-platform .NET `TestProcessHost` fixture.
 
 ### Linux Packaging & Smoke Tests
 
-To package the self-contained Linux release archive and run the smoke tests locally:
+To build the Linux AppImage and portable release archive and run the smoke tests
+locally, run these from the repository root:
 
 ```bash
-# Package the CLI with pinned native tools
+# Publish the CLI and desktop app with pinned native tools, then package the
+# portable archive and AppImage into dist/
 build/linux/fetch-native-tools.sh
 
 # Generate test fixtures and run bundle smoke tests
 build/linux/generate-fixtures.sh
-SMOKE_FIXTURES="/tmp/streamextract-fixtures/sample.mp4
-/tmp/streamextract-fixtures/sample.mkv" build/linux/smoke-test.sh
+SMOKE_FIXTURES="dist/fixtures/sample.mp4
+dist/fixtures/sample.mkv" build/linux/smoke-test.sh
 ```
+
+All output lands in the git-ignored `dist/` directory:
+
+| Path | Contents |
+| --- | --- |
+| `dist/publish/streamextract/` | Staged CLI and `desktop/` bundle |
+| `dist/streamextract-linux-x64.tar.gz` | Portable release archive |
+| `dist/StreamExtract-x86_64.AppImage` | One-file desktop AppImage |
+| `dist/fixtures/` | Generated smoke-test media |
+
+Set `DIST_DIR` to relocate everything at once, or `PUBLISH_ROOT`,
+`ARCHIVE_PATH`, `APPIMAGE_PATH`, and `FIXTURE_DIR` to relocate individual
+paths.
 
 ## Architecture
 
-The codebase is organized into three projects:
+The codebase is organized into four projects:
 
 - **`StreamExtract.Core`** (`net10.0`) — Platform-neutral core containing media
   container models, extractor plugins (`MkvExtractorPlugin`, `Mp4ExtractorPlugin`),
@@ -222,6 +243,10 @@ The codebase is organized into three projects:
 - **`stream-extract-winforms`** (`net10.0-windows`) — Windows desktop WinForms GUI
   application for visual file selection, checkbox tree configuration, and progress
   logging.
+- **`StreamExtract.Desktop`** (`net10.0`) — Cross-platform Avalonia desktop GUI
+  (MVVM via CommunityToolkit.Mvvm) that shares `StreamExtract.Core` with the other
+  front ends. Packaged for Linux as the AppImage and the archive's `desktop/`
+  bundle; also configured for `win-x64`.
 
 Key design decisions:
 
