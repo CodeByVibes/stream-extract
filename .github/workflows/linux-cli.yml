@@ -15,6 +15,7 @@ jobs:
       SMOKE_FIXTURES: |
         ${{ github.workspace }}/dist/fixtures/sample.mp4
         ${{ github.workspace }}/dist/fixtures/sample.mkv
+        ${{ github.workspace }}/dist/fixtures/sample-rich.mkv
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
