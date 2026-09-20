@@ -22,6 +22,8 @@ public partial class Form1 : Form
     private string? _updateDownloadUrl;
     private int _progressLineStart = -1;
     private int _progressLineLength;
+    // long.MinValue so the first progress tick after startup is never throttled away.
+    private long _lastProgressLogTick = long.MinValue;
     private ToolStripStatusLabel _statusLabel = null!;
 
     private TreeView tvFiles = null!;
@@ -244,14 +246,30 @@ public partial class Form1 : Form
 
     private async void BtnExtract_Click(object? sender, EventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(txtBrowseOutputDirectory.Text))
-        { MessageBox.Show("You must set an output folder!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-        if (_importedFiles.Count == 0) return;
-
-        rtbDebug.Clear();
-        _progressLineStart = -1;
+        // Disable before any validation: a rapid double-click would otherwise start a second
+        // extraction, because both clicks can pass validation before the button is disabled.
+        if (!btnExtract.Enabled || _activeOperation is not null) return;
         btnExtract.Enabled = false;
-        await RunExclusiveAsync("Extracting...", ExportFilesAsync);
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(txtBrowseOutputDirectory.Text))
+            { MessageBox.Show("You must set an output folder!", "Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+            if (_importedFiles.Count == 0) return;
+
+            rtbDebug.Clear();
+            _progressLineStart = -1;
+            await RunExclusiveAsync("Extracting...", ExportFilesAsync);
+        }
+        catch (Exception ex)
+        {
+            DebugLog($"Unexpected error: {ex.Message}");
+        }
+        finally
+        {
+            // Runs on every return/throw path so the button can never stay disabled.
+            if (!_isClosing && !IsDisposed) btnExtract.Enabled = true;
+        }
     }
 
     private async Task ExportFilesAsync(CancellationToken ct)
@@ -259,7 +277,7 @@ public partial class Form1 : Form
         var requests = SnapshotExtractRequests();
         if (requests.Count == 0)
         {
-            btnExtract.Enabled = true;
+            // Ownership of btnExtract lives in BtnExtract_Click; it re-enables in its finally.
             pbProgress.Value = 0;
             DebugLog("Nothing to extract: no items selected or no valid output directory.");
             return;
@@ -307,7 +325,8 @@ public partial class Form1 : Form
 
         if (_isClosing) return;
 
-        btnExtract.Enabled = true;
+        // btnExtract is re-enabled by BtnExtract_Click's finally, which also covers this
+        // early-return path.
         pbProgress.Value = 0;
 
         if (ct.IsCancellationRequested)
@@ -448,10 +467,26 @@ public partial class Form1 : Form
         _progressLineStart = -1; // a normal log line ends any in-progress progress line
     }
 
-    private void DebugLogProgress(string text)
+    /// <summary>
+    /// Minimum interval between in-place progress rewrites. Rewriting text in a
+    /// <see cref="RichTextBox"/> is expensive, so progress ticks are coalesced instead of
+    /// repainting on every report.
+    /// </summary>
+    private const long ProgressLogIntervalMs = 100;
+
+    private void DebugLogProgress(string text, bool isComplete)
     {
         if (_isClosing || IsDisposed) return;
-        if (InvokeRequired) { BeginInvoke(() => DebugLogProgress(text)); return; }
+        if (InvokeRequired) { BeginInvoke(() => DebugLogProgress(text, isComplete)); return; }
+
+        // Throttle intermediate ticks; always render the final one so the last
+        // progress line is never dropped.
+        if (!isComplete)
+        {
+            var now = Environment.TickCount64;
+            if (now - _lastProgressLogTick < ProgressLogIntervalMs) return;
+            _lastProgressLogTick = now;
+        }
 
         if (_progressLineStart >= 0)
         {
@@ -474,7 +509,7 @@ public partial class Form1 : Form
     {
         if (_isClosing || IsDisposed) return;
         pbProgress.Value = p.Percentage;
-        if (!p.IsComplete) DebugLogProgress(p.StatusText);
+        DebugLogProgress(p.StatusText, p.IsComplete);
     }
 
     private async Task RunExclusiveAsync(string statusText, Func<CancellationToken, Task> op)
