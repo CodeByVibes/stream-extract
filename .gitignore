@@ -85,3 +85,4 @@ publish/
 .kilo/
 .reasonix/
 *REPORT*.md
+local-docs/
