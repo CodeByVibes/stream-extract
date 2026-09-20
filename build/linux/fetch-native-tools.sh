@@ -105,7 +105,6 @@ duplicates="$(printf '%s\n' "${closure[@]}" |
     printf 'Ambiguous library basenames: %s\n' "$duplicates" >&2
     exit 1
 }
-cp "$WORKDIR/mkvtoolnix.AppImage" "$STAGE_DIR/tools/mkvtoolnix.AppImage"
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
     'export LD_LIBRARY_PATH="$DIR/mkvtoolnix-runtime/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"' \
@@ -147,7 +146,7 @@ chmod 0755 "$STAGE_DIR/tools/MP4Box"
 cp "$ROOT_DIR/licenses/GPAC-LICENSE.txt" "$STAGE_DIR/licenses/"
 
 chmod 0755 "$STAGE_DIR/streamextract" "$STAGE_DIR/tools/mkvmerge" "$STAGE_DIR/tools/mkvextract" \
-    "$STAGE_DIR/tools/MP4Box" "$STAGE_DIR/tools/mkvtoolnix.AppImage"
+    "$STAGE_DIR/tools/MP4Box"
 if find "$STAGE_DIR/tools" -type l -print -quit | grep -q .; then
     echo "Packaging produced a symlink; expected regular files only" >&2
     exit 1

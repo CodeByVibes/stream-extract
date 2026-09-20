@@ -14,7 +14,7 @@ test -x "$APPIMAGE"
 tar -tzf "$ARCHIVE" > "$TEST_DIR/archive.list"
 grep -Fx 'streamextract/' "$TEST_DIR/archive.list"
 for path in streamextract/streamextract streamextract/tools/mkvmerge streamextract/tools/mkvextract \
-    streamextract/tools/MP4Box streamextract/tools/mkvtoolnix.AppImage \
+    streamextract/tools/MP4Box \
     streamextract/licenses/GPAC-LICENSE.txt streamextract/licenses/MKVToolNix-LICENCE.txt \
     streamextract/tools-manifest.json streamextract/desktop/tools/mkvmerge \
     streamextract/desktop/tools/mkvextract streamextract/desktop/tools/MP4Box \
