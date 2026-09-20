@@ -160,7 +160,10 @@ public sealed partial class MkvExtractorPlugin : IExtractorPlugin
         {
             await RunModeAsync(BuildChaptersCommand(req, xmlPath), modeIndex, modeCount, progress, ct);
 
-            var chapters = ParseChapterXml(await File.ReadAllTextAsync(xmlPath, ct));
+            // Stream the chapter XML instead of buffering it into a string first.
+            await using var xmlStream = File.OpenRead(xmlPath);
+            var chapterDoc = await XDocument.LoadAsync(xmlStream, LoadOptions.None, ct);
+            var chapters = ParseChapterXml(chapterDoc);
             if (chapters.Count == 0)
                 throw new InvalidDataException("no chapters found in the source file");
 
@@ -182,8 +185,10 @@ public sealed partial class MkvExtractorPlugin : IExtractorPlugin
     }
 
     internal static List<(string Name, TimeSpan Start)> ParseChapterXml(string xml)
+        => ParseChapterXml(XDocument.Parse(xml));
+
+    internal static List<(string Name, TimeSpan Start)> ParseChapterXml(XDocument doc)
     {
-        var doc = XDocument.Parse(xml);
         var result = new List<(string, TimeSpan)>();
         foreach (var atom in doc.Descendants("ChapterAtom"))
         {

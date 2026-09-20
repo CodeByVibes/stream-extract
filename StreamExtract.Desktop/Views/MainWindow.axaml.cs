@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
 using Avalonia.Controls;
@@ -80,7 +81,7 @@ public partial class MainWindow : Window
     private static IReadOnlyList<string> GetDroppedPaths(DragEventArgs e)
     {
         var paths = new List<string>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(PathComparer.Default);
 
         void AddPath(string? path)
         {
@@ -122,7 +123,10 @@ public partial class MainWindow : Window
                     AddPath(p);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Drop] text/uri-list format probe failed: {ex.Message}");
+        }
 
         try
         {
@@ -135,7 +139,10 @@ public partial class MainWindow : Window
                     AddPath(p);
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Drop] text/uri-list byte format probe failed: {ex.Message}");
+        }
 
         // 3. Try standard plain text (DataFormat.Text)
         var text = e.DataTransfer.TryGetText();
@@ -174,7 +181,10 @@ public partial class MainWindow : Window
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"[Drop] format '{format.Identifier}' probe failed: {ex.Message}");
+                }
             }
         }
 

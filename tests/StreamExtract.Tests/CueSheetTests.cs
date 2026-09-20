@@ -1,4 +1,5 @@
 using StreamExtract.Plugins;
+using System.Xml.Linq;
 
 namespace StreamExtract.Tests;
 
@@ -56,6 +57,20 @@ public class CueSheetTests
         var chapters = MkvExtractorPlugin.ParseChapterXml("<Chapters/>");
 
         Assert.Empty(chapters);
+    }
+
+    /// <summary>
+    /// The string overload delegates to the <see cref="XDocument"/> overload, which is what the
+    /// extraction path uses to stream the chapter XML rather than buffering it into a string.
+    /// </summary>
+    [Fact]
+    public void ParseChapterXml_XDocumentOverload_MatchesStringOverload()
+    {
+        var fromString = MkvExtractorPlugin.ParseChapterXml(SampleChapterXml);
+        var fromDocument = MkvExtractorPlugin.ParseChapterXml(XDocument.Parse(SampleChapterXml));
+
+        Assert.Equal(fromString, fromDocument);
+        Assert.Equal(3, fromDocument.Count);
     }
 
     [Fact]

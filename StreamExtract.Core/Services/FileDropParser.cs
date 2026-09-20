@@ -12,7 +12,7 @@ public static class FileDropParser
         if (string.IsNullOrWhiteSpace(value)) return [];
 
         var paths = new List<string>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<string>(PathComparer.Default);
         foreach (var line in value.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
         {
             var item = line.Trim().Trim('"', '\'');

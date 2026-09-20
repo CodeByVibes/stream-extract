@@ -8,9 +8,8 @@ ConsoleCancelEventHandler? handler = (_, e) => { e.Cancel = true; cancellation.C
 Console.CancelKeyPress += handler;
 try
 {
-    CliParseResult options;
-    try { options = CliParser.TryParse(args); }
-    catch (Exception ex) { Console.Error.WriteLine(ex.Message); return 2; }
+    // TryParse reports failure through CliParseResult.Failure instead of throwing.
+    var options = CliParser.TryParse(args);
     if (options.Failure != CliParseFailure.None) { Console.Error.WriteLine(options.Error); Console.Error.WriteLine(CliOptions.HelpText); return 2; }
     if (options.Command is CliCommand.Help or CliCommand.Version)
         return await new CommandRunner(new PluginRegistry(), Console.Out, Console.Error).RunAsync(options, cancellation.Token);

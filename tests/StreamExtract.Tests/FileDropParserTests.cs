@@ -35,4 +35,29 @@ public sealed class FileDropParserTests
 
         Assert.Equal(["/home/johan/movie.mp4"], result);
     }
+
+    /// <summary>
+    /// Deduplication must follow platform path semantics: Windows is case-insensitive, so
+    /// differently-cased spellings of the same path are one entry, while Unix keeps them distinct.
+    /// </summary>
+    [Fact]
+    public void DeduplicatesPathsUsingPlatformCaseSensitivity()
+    {
+        var result = FileDropParser.ParseUriList("/media/Movie.mkv\n/media/movie.mkv\n");
+
+        if (OperatingSystem.IsWindows())
+            Assert.Single(result);
+        else
+            Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
+    public void PathComparer_MatchesPlatformPathSemantics()
+    {
+        var comparer = PathComparer.Default;
+
+        Assert.Equal(
+            OperatingSystem.IsWindows(),
+            comparer.Equals("/media/Movie.mkv", "/media/movie.mkv"));
+    }
 }

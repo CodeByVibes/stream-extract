@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Globalization;
 using Avalonia.Data.Converters;
 using Avalonia.Media.Imaging;
@@ -26,9 +27,10 @@ public class IconKeyToBitmapConverter : IValueConverter
                     return new Bitmap(stream);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Fallback gracefully if asset missing
+                // Fallback gracefully if asset missing, but surface it during development.
+                Debug.WriteLine($"[IconKeyToBitmapConverter] Failed to load asset '{key}': {ex.Message}");
             }
             return null;
         });

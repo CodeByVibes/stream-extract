@@ -36,18 +36,17 @@ public sealed class CommandRunner(PluginRegistry registry, TextWriter stdout, Te
         }
         foreach (var path in options.InputFiles)
         {
-        try
-        {
-            var plugin = registry.GetPlugin(path) ?? throw new CliUsageException($"unsupported file type: {path}");
-            ValidateInputFile(path);
-            ValidateSupportedFeatures(options, plugin);
+            try
+            {
+                var plugin = registry.GetPlugin(path) ?? throw new CliUsageException($"unsupported file type: {path}");
+                ValidateSupportedFeatures(options, plugin);
                 var info = await plugin.AnalyzeFileAsync(path, ct);
+                var availableTrackIds = info.Tracks.Select(x => x.Id).ToHashSet();
                 var ids = options.All || (options.TrackIds.Count == 0 && (options.ExtractCuesForSelectedTracks || options.ExtractTimestamps))
-                    ? info.Tracks.Select(x => x.Id).ToHashSet() : options.TrackIds.ToHashSet();
+                    ? availableTrackIds : options.TrackIds.ToHashSet();
                 if (!options.All)
                 {
-                    var availableIds = info.Tracks.Select(x => x.Id).ToHashSet();
-                    var unknownIds = ids.Where(id => !availableIds.Contains(id)).ToArray();
+                    var unknownIds = ids.Where(id => !availableTrackIds.Contains(id)).ToArray();
                     if (unknownIds.Length > 0)
                         throw new CliUsageException($"unknown track ID(s): {string.Join(", ", unknownIds)}");
                 }
@@ -103,14 +102,9 @@ public sealed class CommandRunner(PluginRegistry registry, TextWriter stdout, Te
             if (File.Exists(path))
                 throw new CliUsageException($"output path is not a directory: {path}");
 
+            // Idempotent: creates the directory or throws.
             Directory.CreateDirectory(path);
-            if (!Directory.Exists(path))
-                throw new CliUsageException($"output path is not a directory: {path}");
             return path;
-        }
-        catch (CliUsageException)
-        {
-            throw;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
@@ -126,10 +120,6 @@ public sealed class CommandRunner(PluginRegistry registry, TextWriter stdout, Te
                 throw new CliUsageException($"input file does not exist: {path}");
             if ((File.GetAttributes(path) & FileAttributes.Directory) != 0)
                 throw new CliUsageException($"input path is not a regular file: {path}");
-        }
-        catch (CliUsageException)
-        {
-            throw;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
