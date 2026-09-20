@@ -11,7 +11,7 @@ APPIMAGE_PATH="${APPIMAGE_PATH:-$DIST_DIR/StreamExtract-x86_64.AppImage}"
 
 source "$SCRIPT_DIR/tool-versions.env"
 
-for command in curl sha256sum dotnet tar find python3 unsquashfs file gcc make strip; do
+for command in curl sha256sum dotnet tar find python3 unsquashfs file gcc make strip ldd; do
     command -v "$command" >/dev/null || { echo "Required utility is missing: $command" >&2; exit 1; }
 done
 
@@ -41,8 +41,70 @@ chmod 0755 "$WORKDIR/mkvtoolnix.AppImage"
 )
 test -x "$WORKDIR/squashfs-root/usr/bin/mkvmerge"
 test -x "$WORKDIR/squashfs-root/usr/bin/mkvextract"
-# Dereference AppImage links so the archive has no filesystem dependencies outside itself.
-cp -rL --preserve=mode,timestamps "$WORKDIR/squashfs-root" "$STAGE_DIR/tools/mkvtoolnix-runtime"
+MKVTOOLNIX_ROOT="$WORKDIR/squashfs-root"
+MKVTOOLNIX_LIBS="$MKVTOOLNIX_ROOT/usr/lib"
+MKVTOOLNIX_RUNTIME="$STAGE_DIR/tools/mkvtoolnix-runtime"
+
+# Emit one absolute path per dependency that resolves inside the extracted
+# tree. A dependency that resolves elsewhere is a host library and is skipped
+# deliberately, never bundled. The surrounding `set -o pipefail` is what lets a
+# per-tool `ldd` failure survive the trailing `| sort -u`.
+resolve_bundled_closure() {
+    local tool output dependency status
+    for tool in "$@"; do
+        status=0
+        output="$(LD_LIBRARY_PATH="$MKVTOOLNIX_LIBS" ldd "$tool" 2>&1)" ||
+            status=$?
+        if (( status != 0 )); then
+            printf 'ldd failed for %s\n' "$tool" >&2
+            return 1
+        fi
+        if [[ "$output" == *"not found"* ]]; then
+            printf 'Unresolved dependency for %s\n' "$tool" >&2
+            return 1
+        fi
+        while IFS= read -r dependency; do
+            [[ "$dependency" == "$MKVTOOLNIX_LIBS/"* ]] || continue
+            printf '%s\n' "$dependency"
+        done < <(printf '%s\n' "$output" |
+            awk '/=>/ { print $3 } /^\t\// { print $1 }')
+    done | sort -u
+}
+
+# Bundle only the two CLI tools and the libraries they load, instead of the
+# whole extracted AppDir (GUI, Qt plugin directories, translations, icons).
+mkdir -p "$MKVTOOLNIX_RUNTIME/usr/bin" "$MKVTOOLNIX_RUNTIME/usr/lib"
+cp --preserve=mode \
+    "$MKVTOOLNIX_ROOT/usr/bin/mkvmerge" \
+    "$MKVTOOLNIX_ROOT/usr/bin/mkvextract" \
+    "$MKVTOOLNIX_RUNTIME/usr/bin/"
+if ! closure_output="$(resolve_bundled_closure \
+        "$MKVTOOLNIX_ROOT/usr/bin/mkvmerge" \
+        "$MKVTOOLNIX_ROOT/usr/bin/mkvextract")"; then
+    printf 'Failed to resolve the MKVToolNix library closure\n' >&2
+    exit 1
+fi
+mapfile -t closure < <(printf '%s\n' "$closure_output" | sed '/^$/d')
+for library in "${closure[@]}"; do
+    cp -L --preserve=mode "$library" "$MKVTOOLNIX_RUNTIME/usr/lib/"
+done
+(( ${#closure[@]} >= 15 )) || {
+    printf 'Closure resolved only %s libraries; expected at least 15\n' \
+        "${#closure[@]}" >&2
+    exit 1
+}
+for canary in $MKVTOOLNIX_REQUIRED_LIBRARIES; do
+    test -f "$MKVTOOLNIX_RUNTIME/usr/lib/$canary" || {
+        printf 'Closure is missing %s\n' "$canary" >&2
+        exit 1
+    }
+done
+duplicates="$(printf '%s\n' "${closure[@]}" |
+    xargs -n1 basename | sort | uniq -d)"
+[[ -z "$duplicates" ]] || {
+    printf 'Ambiguous library basenames: %s\n' "$duplicates" >&2
+    exit 1
+}
 cp "$WORKDIR/mkvtoolnix.AppImage" "$STAGE_DIR/tools/mkvtoolnix.AppImage"
 printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
     'DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"' \
