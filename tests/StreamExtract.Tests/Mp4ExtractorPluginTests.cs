@@ -283,6 +283,30 @@ public class Mp4ExtractorPluginTests
     }
 
     [Fact]
+    public async Task ExtractAsync_RelativeSourcePath_IsPassedToMp4BoxAsAbsolute()
+    {
+        // MP4Box runs with the output directory as its working directory, so handing it a
+        // relative source path made it resolve against the output directory and fail with
+        // "Requested URL is not valid or cannot be found".
+        var resolver = new TestNativeToolResolver();
+        var runner = new FakeProcessRunner();
+        runner.AddResult(0, "", "");
+        var relativeSource = Path.Combine("media", "movie.mp4");
+        var output = Path.Combine(Path.GetTempPath(), "stream-extract-output", Guid.NewGuid().ToString("N"));
+        var request = new ExtractRequest(new MediaFileInfo(relativeSource, "movie.mp4", ExtractorFeatures.Tracks,
+            [new TrackInfo(1, TrackType.Video, "avc1", "Track", "und", new() { ["CodecId"] = "avc1" })],
+            [], [], []), output, [1], [], false, false, false, false, false);
+
+        await new Mp4ExtractorPlugin(resolver, runner).ExtractAsync(request, new Progress<ExtractionProgress>());
+
+        var call = Assert.Single(runner.Calls);
+        var sourceArgument = call.Arguments[2];
+        Assert.True(Path.IsPathFullyQualified(sourceArgument));
+        Assert.EndsWith(Path.Combine("media", "movie.mp4"), sourceArgument, StringComparison.Ordinal);
+        Assert.Equal(output, call.WorkingDirectory);
+    }
+
+    [Fact]
     public async Task ExtractAsync_PartialFailure_DoesNotReportCompletion()
     {
         var runner = new FakeProcessRunner();

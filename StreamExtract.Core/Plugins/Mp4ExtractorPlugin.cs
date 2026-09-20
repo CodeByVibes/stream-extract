@@ -125,6 +125,10 @@ public sealed partial class Mp4ExtractorPlugin : IExtractorPlugin
     public async Task<ExtractOutcome> ExtractAsync(ExtractRequest req, IProgress<ExtractionProgress> progress, CancellationToken ct = default)
     {
         var fn = Path.GetFileNameWithoutExtension(req.Source.FilePath);
+        // MP4Box is executed with the output directory as its working directory, so a
+        // relative source path would resolve against that directory instead of the
+        // caller's. Resolve it once so every invocation receives an absolute path.
+        var sourcePath = Path.GetFullPath(req.Source.FilePath);
         var total = req.SelectedTrackIds.Count + (req.SelectedChapterIds.Count > 0 ? 1 : 0);
         int done = 0;
         var failures = new List<string>();
@@ -135,7 +139,7 @@ public sealed partial class Mp4ExtractorPlugin : IExtractorPlugin
             try
             {
                 await _runner.RunAsync(_tool,
-                    new[] { "-raw", $"{tid}:output={OutputPath(req, BuildRawOutputName(req, tid))}", req.Source.FilePath },
+                    new[] { "-raw", $"{tid}:output={OutputPath(req, BuildRawOutputName(req, tid))}", sourcePath },
                     ct, req.OutputDirectory);
                 done++;
                 progress.Report(new ExtractionProgress(req.Source.FileName, $"Track {tid}",
@@ -157,7 +161,7 @@ public sealed partial class Mp4ExtractorPlugin : IExtractorPlugin
             try
             {
                 var chapFile = OutputPath(req, $"{fn}_chapters.xml");
-                await _runner.RunAsync(_tool, new[] { "-dump-chap", req.Source.FilePath, "-out", chapFile }, ct);
+                await _runner.RunAsync(_tool, new[] { "-dump-chap", sourcePath, "-out", chapFile }, ct);
                 done++;
                 progress.Report(new ExtractionProgress(req.Source.FileName, "Chapters",
                     total > 0 ? done * 100 / total : 0, "Extracted chapters.", false));
