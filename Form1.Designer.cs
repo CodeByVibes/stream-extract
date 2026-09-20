@@ -31,6 +31,7 @@ partial class Form1
         btnAbout = new Button();
         btnNewVersion = new Button();
         pbProgress = new SmoothProgressBar();
+        ttFiles = new ToolTip(components);
         SuspendLayout();
         // 
         // tvFiles
@@ -47,6 +48,7 @@ partial class Form1
         tvFiles.SelectedImageIndex = 0;
         tvFiles.Size = new Size(676, 236);
         tvFiles.TabIndex = 0;
+        ttFiles.SetToolTip(tvFiles, "Drag media files here. Select a file and press Delete to remove it from the list (the file on disk is not touched).");
         // 
         // ilIcons
         // 

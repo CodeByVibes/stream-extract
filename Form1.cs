@@ -38,6 +38,7 @@ public partial class Form1 : Form
     private StatusStrip statusStrip1 = null!;
     private Button btnAbout = null!;
     private Button btnNewVersion = null!;
+    private ToolTip ttFiles = null!;
 
     public Form1()
     {
@@ -93,6 +94,7 @@ public partial class Form1 : Form
         tvFiles.DragEnter += TvFiles_DragEnter!;
         tvFiles.DragDrop += TvFiles_DragDrop!;
         tvFiles.AfterCheck += TvFiles_AfterCheck!;
+        tvFiles.KeyDown += TvFiles_KeyDown!;
         btnOpenFiles.Click += BtnOpenFiles_Click!;
         btnExtract.Click += BtnExtract_Click!;
         btnBrowseOutputDirectory.Click += BtnBrowseOutputDirectory_Click!;
@@ -387,6 +389,48 @@ public partial class Form1 : Form
         if (e.Action == TreeViewAction.Unknown) return;
         foreach (TreeNode child in e.Node!.Nodes)
             child.Checked = e.Node.Checked;
+    }
+
+    private void TvFiles_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.KeyCode != Keys.Delete) return;
+
+        // The tree is a working set: deleting an entry only detaches it from the list.
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+
+        var node = tvFiles.SelectedNode;
+        if (node is null) return;
+
+        var fileName = (node.Tag as ImportedFile)?.Info.FileName;
+        if (RemoveFileNodeFromList(tvFiles.Nodes, _importedFiles, node) == 0)
+        {
+            SetStatus("Only media files (top-level entries) can be removed from the list.");
+            return;
+        }
+
+        DebugLog($"Removed {fileName} from the list. The file on disk was not touched.");
+        if (_activeOperation is null) btnExtract.Enabled = _importedFiles.Count > 0;
+        SetStatus(_importedFiles.Count > 0
+            ? $"Imported {_importedFiles.Count} file{(_importedFiles.Count == 1 ? "" : "s")}"
+            : "");
+    }
+
+    /// <summary>
+    /// Detaches a top-level file entry from the in-memory list. Only the list entry is
+    /// removed — nothing is deleted, moved or modified on disk. Child entries (tracks,
+    /// attachments, chapters, ...) are ignored, so only a media file itself can be
+    /// dropped. Returns the number of files removed (0 or 1).
+    /// </summary>
+    internal static int RemoveFileNodeFromList(TreeNodeCollection nodes, List<ImportedFile> importedFiles, TreeNode? node)
+    {
+        if (node is null) return 0;
+        if (node.Tag is not ImportedFile imported) return 0;
+        if (!nodes.Contains(node)) return 0;
+
+        nodes.Remove(node);
+        importedFiles.Remove(imported);
+        return 1;
     }
 
     private void DebugLog(string text)
