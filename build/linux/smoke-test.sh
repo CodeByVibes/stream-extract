@@ -64,6 +64,36 @@ if readelf -d "$ROOT/tools/MP4Box" 2>/dev/null | grep -q 'DYNAMIC'; then
 fi
 check_ldd "$ROOT/tools/mkvtoolnix-runtime/usr/lib" "$ROOT/tools/mkvtoolnix-runtime/usr/bin/mkvmerge"
 check_ldd "$ROOT/tools/mkvtoolnix-runtime/usr/lib" "$ROOT/tools/mkvtoolnix-runtime/usr/bin/mkvextract"
+source "$SCRIPT_DIR/tool-versions.env"
+for library in $MKVTOOLNIX_REQUIRED_LIBRARIES; do
+    test -f "$ROOT/tools/mkvtoolnix-runtime/usr/lib/$library" || {
+        echo "Missing required library: $library" >&2
+        exit 1
+    }
+done
+# The bundle carries the CLI closure only: no GUI binaries, no Qt plugin
+# directories, no usr/share tree, and none of the libraries only the GUI loads.
+for library in libwayland-client.so.0 libwayland-cursor.so.0 \
+    libsystemd.so.0 libblkid.so.1 libmount.so.1; do
+    test -e "$ROOT/tools/mkvtoolnix-runtime/usr/lib/$library" && {
+        echo "Unexpected bundled library: $library" >&2
+        exit 1
+    }
+done
+for path in usr/bin/mkvtoolnix-gui usr/bin/mkvinfo usr/bin/mkvpropedit \
+    usr/bin/platforms usr/bin/imageformats usr/bin/multimedia \
+    usr/bin/iconengines usr/share AppRun .DirIcon mkvtoolnix-gui.desktop \
+    mkvtoolnix-gui.png; do
+    test -e "$ROOT/tools/mkvtoolnix-runtime/$path" && {
+        echo "Unexpected bundled payload: $path" >&2
+        exit 1
+    }
+done
+bundled="$(find "$ROOT/tools/mkvtoolnix-runtime" -type f | wc -l)"
+test "$bundled" -le 40 || {
+    echo "Runtime tree grew to $bundled files; pruning regressed" >&2
+    exit 1
+}
 "$ROOT/streamextract" --help
 "$ROOT/streamextract" --version
 
