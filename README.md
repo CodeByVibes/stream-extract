@@ -129,6 +129,10 @@ portable archive and the one-file AppImage.
 4. **Extract** — click **Extract**. Progress is shown on the progress bar and
    in the log pane.
 
+The tree is a working set: select a top-level file entry and press
+<kbd>Delete</kbd> to remove it from the list. Only the list entry is removed —
+the media file on disk is never touched.
+
 ### Linux desktop
 
 The Avalonia desktop app follows the same workflow as the Windows GUI:
@@ -139,6 +143,10 @@ The Avalonia desktop app follows the same workflow as the Windows GUI:
 3. **Select what to extract** — check the tracks and features you want under
    each file.
 4. **Extract** — click **Extract**; **Cancel** stops an in-progress run.
+
+The file tree is a working set: select a top-level file entry and press
+<kbd>Delete</kbd> to remove it from the list. Only the list entry is removed —
+the media file on disk is never touched.
 
 ### Linux CLI
 
