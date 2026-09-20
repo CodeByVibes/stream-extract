@@ -15,8 +15,8 @@ set each tool's bundled library path.
 
 - Extract audio, video, and subtitle tracks from MKV/MKA and MP4/M4V/M4A/M4B
   files
-- Extract chapters, attachments, tags, cue sheets, timestamp files, and
-  per-track cue sheets from MKV containers
+- Extract chapters from MKV and MP4 containers, and attachments, tags, cue
+  sheets, timestamp files, and per-track cue sheets from MKV containers
 - Drag-and-drop multiple files or pick them with the file dialog
 - Per-file track and feature selection with a checkbox tree
 - Sequential, progress-tracked extraction
@@ -32,16 +32,18 @@ set each tool's bundled library path.
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build
   from source
 - Windows (for the WinForms GUI; it targets `net10.0-windows`)
-- Linux (`linux-x64` for the CLI and desktop app; requires no separate .NET or native-tool installation)
+- Linux (`linux-x64` for the CLI and desktop app; requires no separate .NET
+  or native-tool installation)
 
-The native tools are bundled (Windows tools are in `tools/`, Linux tools are in the release archive) and required at runtime:
+The native tools are bundled (Windows tools are in `tools/`, Linux tools are in
+the release archive) and required at runtime:
 
 - `mkvextract` / `mkvmerge` — from [MKVToolNix](https://mkvtoolnix.download/)
 - `MP4Box` — from [GPAC](https://wiki.gpac.io/)
 
 ## Installation
 
-### Windows GUI
+### Windows GUI from source
 
 No installer is provided. To run from source:
 
@@ -60,8 +62,7 @@ dotnet build -c Release
 The build copies `tools/` and `licenses/` into the output directory. Launch the
 app from there, or run the produced `stream-extract-winforms.exe`.
 
-
-### Linux desktop
+### Linux desktop AppImage
 
 Download `StreamExtract-x86_64.AppImage`, make it executable, and launch it:
 
@@ -77,7 +78,8 @@ written to `dist/StreamExtract-x86_64.AppImage`.
 
 ### Linux CLI and portable desktop bundle
 
-Download the `linux-x64` release archive (`streamextract-linux-x64.tar.gz`) and extract it:
+Download the `linux-x64` release archive
+(`streamextract-linux-x64.tar.gz`) and extract it:
 
 ```bash
 tar -xzf streamextract-linux-x64.tar.gz
@@ -89,7 +91,8 @@ environment. It includes the CLI, verified `mkvmerge`, `mkvextract`, and
 `MP4Box` Linux binaries, and the MKVToolNix library closure those two tools
 load. You do not need to install `.NET` or the native tools separately; the host
 still supplies the Linux kernel and dynamic loader.
-The release packaging process securely downloads pinned native tool versions, verifies their SHA-256 checksums, and bundles them.
+The release packaging process securely downloads pinned native tool versions,
+verifies their SHA-256 checksums, and bundles them.
 
 Packaging builds a fully static `MP4Box` from the pinned GPAC source release, so
 the bundled binary has no dynamic library dependencies of its own. Only the
@@ -126,24 +129,59 @@ portable archive and the one-file AppImage.
 4. **Extract** — click **Extract**. Progress is shown on the progress bar and
    in the log pane.
 
+### Linux desktop
+
+The Avalonia desktop app follows the same workflow as the Windows GUI:
+
+1. **Open files** — drag media files onto the file tree, or click **Open files**.
+2. **Select output folder** — clear **Use source directory** and pick a folder,
+   or keep it checked to write next to the first imported file.
+3. **Select what to extract** — check the tracks and features you want under
+   each file.
+4. **Extract** — click **Extract**; **Cancel** stops an in-progress run.
 
 ### Linux CLI
 
 The CLI provides full feature parity with the GUI:
 
 ```bash
-# Print media information
-./streamextract info <file>
+# Print media information; the listed IDs are the values --tracks accepts
+./streamextract info movie.mkv
 
 # Extract specific tracks and chapters
 ./streamextract extract movie.mkv --tracks 1,2 --chapters --output ./out
 
-# Extract all supported features from multiple files
-./streamextract extract movie1.mkv movie2.mp4 --all --output ./out
+# Extract every feature from MKV files (see --all below for the MP4 caveat)
+./streamextract extract movie1.mkv movie2.mkv --all --output ./out
 
 # Extract cue sheets, per-track cue sheets, and timestamps
-./streamextract extract concert.mkv --cue-sheets --cues-for-selected-tracks --timestamps --output ./out
+./streamextract extract concert.mkv --cue-sheets \
+  --cues-for-selected-tracks --timestamps --output ./out
 ```
+
+#### Options
+
+- `--tracks <ids>` — Comma-separated track IDs to extract, as reported by
+  `info`.
+- `--chapters` — Extract chapters.
+- `--attachments` — Extract attachments (MKV only).
+- `--tags` — Extract tags (MKV only).
+- `--cue-sheets` — Extract the container-level cue sheet (MKV only).
+- `--cues-for-selected-tracks` — Write one cue sheet per selected track (MKV
+  only). Selects every track when `--tracks` is omitted.
+- `--timestamps` — Write a timestamp file per selected track (MKV only).
+  Selects every track when `--tracks` is omitted.
+- `--all` — Extract every feature above. Cannot be combined with another
+  extraction option, and fails with a usage error on containers that do not
+  support all of them (MP4 supports tracks and chapters only).
+- `--output <dir>` — Write output to `dir`, creating it when missing. Defaults
+  to the current directory.
+- `--verbose` — Print per-file progress even when stdout is redirected.
+- `--help`, `-h` — Print usage.
+- `--version` — Print the CLI version.
+
+Unknown track IDs, unsupported extraction modes, and malformed input are
+reported as usage errors (exit code `2`).
 
 #### Exit Codes
 
@@ -166,11 +204,13 @@ Supported extraction options per file type:
 | Cues for selected tracks | yes | no |
 | Timestamps | yes | no |
 
-Output naming follows the source file name. For example, extracting a video
-track from `movie.mkv` writes `movie_Track1.h264` into the output folder;
-chapters write `movie_chapters.xml`; timestamps write
-`movie_Track1_timestamps.txt`; cue sheets for selected tracks write
-`movie_Track1_cues.cue`; attachments keep their original names.
+Output naming follows the source file name: `movie.mkv` yields
+`movie_Track1.h264` for a video track, `movie_chapters.xml` for chapters,
+`movie_tags.xml` for tags, `movie_cuesheet.cue` for the container cue sheet,
+`movie_Track1_timestamps.txt` for track timestamps, and
+`movie_Track1_cues.cue` for per-track cue sheets. The number in `_Track<n>` is
+the track ID plus one (`Track1` is track ID `0`), matching the track labels the
+GUIs show. Attachments keep their original names.
 
 ## Development
 
@@ -184,19 +224,23 @@ The build is warning-free.
 
 ### Testing
 
-On Linux, run the portable test project directly:
+`dotnet test` runs the whole solution, which includes the Windows-only WinForms
+test project and therefore requires Windows. On Linux, run the portable test
+project directly:
 
 ```bash
 dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj
 ```
 
-The aggregate solution test command includes the Windows-only WinForms test
-project and therefore requires Windows. The portable tests are headless xUnit
-tests targeting the pure helpers — path containment, request building,
-selection snapshotting, cue sheet generation, progress math, plugin command
-builders, update parsing, and process failure/cancellation contracts. The
-bundled native tools are never invoked during tests; the process contracts are
-exercised against the cross-platform .NET `TestProcessHost` fixture.
+The portable tests are headless xUnit tests targeting the pure helpers — path
+containment, request building, cue sheet generation, progress math, plugin
+command builders, CLI parsing and exit codes, terminal formatting, file drop
+parsing, native tool resolution and integrity verification, update parsing, and
+process failure/cancellation contracts. The bundled native tools are never
+invoked during tests; the process contracts are exercised against the
+cross-platform .NET `TestProcessHost` fixture. The checkbox-tree selection
+snapshot (`BuildFileSelection`) is covered by the Windows-only
+`StreamExtract.WinForms.Tests` project.
 
 ### Linux Packaging & Smoke Tests
 
@@ -208,10 +252,12 @@ locally, run these from the repository root:
 # portable archive and AppImage into dist/
 build/linux/fetch-native-tools.sh
 
-# Generate test fixtures and run bundle smoke tests
+# Generate test fixtures (sample.mp4, sample.mkv, sample-rich.mkv) and run the
+# bundle smoke tests
 build/linux/generate-fixtures.sh
 SMOKE_FIXTURES="dist/fixtures/sample.mp4
-dist/fixtures/sample.mkv" build/linux/smoke-test.sh
+dist/fixtures/sample.mkv
+dist/fixtures/sample-rich.mkv" build/linux/smoke-test.sh
 ```
 
 All output lands in the git-ignored `dist/` directory:
@@ -227,9 +273,18 @@ Set `DIST_DIR` to relocate everything at once, or `PUBLISH_ROOT`,
 `ARCHIVE_PATH`, `APPIMAGE_PATH`, and `FIXTURE_DIR` to relocate individual
 paths.
 
+`fetch-native-tools.sh` downloads the pinned MKVToolNix AppImage and GPAC source
+release, verifies their SHA-256 checksums, builds a static `MP4Box`, and stages
+the bundle. The smoke test requires at least one MKV and one MP4 fixture;
+`sample-rich.mkv` carries an attachment and chapters, so include it to exercise
+the attachment, chapter, and tag modes. Set `SMOKE_FIXTURES` to a
+newline-delimited list of fixtures, or `SMOKE_MKV_FIXTURE` / `SMOKE_MP4_FIXTURE`
+for a single file each.
+
 ## Architecture
 
-The codebase is organized into four projects:
+The codebase is organized into four production projects, with the tests in
+`tests/`:
 
 - **`StreamExtract.Core`** (`net10.0`) — Platform-neutral core containing media
   container models, extractor plugins (`MkvExtractorPlugin`, `Mp4ExtractorPlugin`),
@@ -269,8 +324,9 @@ Key design decisions:
 ## Contributing
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/)
-for commit messages. Please keep the build warning-free and run `dotnet test`
-before submitting a pull request.
+for commit messages. Keep the build warning-free and run the tests before
+submitting a pull request: `dotnet test` on Windows, or
+`dotnet test tests/StreamExtract.Tests/StreamExtract.Tests.csproj` on Linux.
 
 ## License
 
