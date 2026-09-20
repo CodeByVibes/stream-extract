@@ -289,6 +289,44 @@ the attachment, chapter, and tag modes. Set `SMOKE_FIXTURES` to a
 newline-delimited list of fixtures, or `SMOKE_MKV_FIXTURE` / `SMOKE_MP4_FIXTURE`
 for a single file each.
 
+### Windows Packaging
+
+`build/windows/publish.ps1` publishes the Avalonia desktop app for Windows and
+stages the native tool bundle next to it. It runs on Windows with PowerShell 7
+and, for cross-publishing, on Linux or macOS with `pwsh`:
+
+```powershell
+# Self-contained folder bundle -> dist/publish-win-x64/StreamExtract
+pwsh -File build/windows/publish.ps1
+
+# One executable, with everything but tools/ and licenses/ bundled inside
+pwsh -File build/windows/publish.ps1 -SingleFile
+```
+
+The Avalonia project does not copy the native tools itself, so the script stages
+`tools-manifest.json`, `tools/`, and `licenses/` next to the executable. The app
+verifies those tools against the manifest at startup; without them it launches,
+but every extraction fails. The tools are not downloaded — the ones committed in
+`tools/` are verified against the SHA-256 hashes in `tools-manifest.json` first,
+so a modified binary fails the build.
+
+| Path | Contents |
+| --- | --- |
+| `dist/publish-win-x64/StreamExtract/` | Self-contained folder bundle |
+| `dist/StreamExtract-win-x64.zip` | Archive of the folder bundle |
+| `dist/publish-win-x64-singlefile/StreamExtract/` | Single-executable bundle |
+| `dist/StreamExtract-win-x64-singlefile.zip` | Archive of the single-executable bundle |
+
+The single-file flavor folds the runtime, the managed assemblies, and the native
+libraries into one `.exe` and drops the symbol files that come with the native
+packages. It extracts those native libraries into a cache directory on first
+launch (`%TEMP%\.net\...`, overridable with `DOTNET_BUNDLE_EXTRACT_BASE_DIR`), so
+its target needs a writable temporary directory; the folder bundle extracts
+nothing. Both flavors default to a self-contained `win-x64` release; pass
+`-Configuration`, `-RuntimeIdentifier`, `-OutputDirectory`, `-FrameworkDependent`
+or `-SkipArchive` to change that, and `Get-Help build/windows/publish.ps1 -Full`
+for the details.
+
 ## Architecture
 
 The codebase is organized into four production projects, with the tests in
