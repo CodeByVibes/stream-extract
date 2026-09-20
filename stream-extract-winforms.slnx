@@ -4,5 +4,6 @@
   <Project Path="StreamExtract.Desktop\StreamExtract.Desktop.csproj" />
   <Project Path="stream-extract-winforms.csproj" />
   <Project Path="tests\StreamExtract.Tests\StreamExtract.Tests.csproj" />
+  <Project Path="tests\StreamExtract.Desktop.Tests\StreamExtract.Desktop.Tests.csproj" />
   <Project Path="tests\StreamExtract.WinForms.Tests\StreamExtract.WinForms.Tests.csproj" />
 </Solution>
