@@ -8,6 +8,8 @@ public class SmoothProgressBar : UserControl
     private Color _barColor = Color.FromArgb(100, 100, 130, 255);
     private Color _textColor = Color.Black;
     private Font? _textFont;
+    private SolidBrush? _barBrush;
+    private SolidBrush? _textBrush;
 
     public SmoothProgressBar()
     {
@@ -32,19 +34,26 @@ public class SmoothProgressBar : UserControl
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) _textFont?.Dispose();
+        if (disposing)
+        {
+            _textFont?.Dispose();
+            _barBrush?.Dispose();
+            _textBrush?.Dispose();
+        }
         base.Dispose(disposing);
     }
 
     protected override void OnPaint(PaintEventArgs e)
     {
-        using SolidBrush brush = new(_barColor);
+        // Brushes are cached and rebuilt only when the colors change; allocating them per paint
+        // produced heavy GC churn because progress ticks repaint frequently.
+        _barBrush ??= new SolidBrush(_barColor);
         float percent = ProgressMath.Percent(_val, _min, _max);
         Rectangle rect = ClientRectangle;
 
         rect.Width = (int)(rect.Width * percent);
 
-        e.Graphics.FillRectangle(brush, rect);
+        e.Graphics.FillRectangle(_barBrush, rect);
 
         Draw3DBorder(e.Graphics);
 
@@ -57,9 +66,9 @@ public class SmoothProgressBar : UserControl
             Alignment = StringAlignment.Center
         };
         _textFont ??= new Font(DefaultFont.Name, textSize);
-        using SolidBrush textBrush = new(_textColor);
+        _textBrush ??= new SolidBrush(_textColor);
 
-        e.Graphics.DrawString(textPercent + "%", _textFont, textBrush, ClientRectangle, sf);
+        e.Graphics.DrawString(textPercent + "%", _textFont, _textBrush, ClientRectangle, sf);
     }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
@@ -107,14 +116,28 @@ public class SmoothProgressBar : UserControl
     public Color ProgressBarColor
     {
         get => _barColor;
-        set { _barColor = value; Invalidate(); }
+        set
+        {
+            if (_barColor == value) return;
+            _barColor = value;
+            _barBrush?.Dispose();
+            _barBrush = null;
+            Invalidate();
+        }
     }
 
     [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public new Color ForeColor
     {
         get => _textColor;
-        set { _textColor = value; Invalidate(); }
+        set
+        {
+            if (_textColor == value) return;
+            _textColor = value;
+            _textBrush?.Dispose();
+            _textBrush = null;
+            Invalidate();
+        }
     }
 
     private void Draw3DBorder(Graphics g)

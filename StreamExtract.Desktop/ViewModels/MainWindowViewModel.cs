@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -15,6 +16,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly PluginRegistry _pluginRegistry;
     private readonly IDialogService _dialogService;
     private readonly List<ImportedFile> _importedFiles = [];
+    private readonly StringBuilder _logBuilder = new();
     private CancellationTokenSource? _activeCts;
 
     [ObservableProperty]
@@ -381,8 +383,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void AppendLog(string text)
     {
-        LogOutput = string.IsNullOrEmpty(LogOutput)
-            ? text
-            : $"{LogOutput}\n{text}";
+        // Append through a builder: concatenating onto LogOutput would reallocate the whole
+        // history on every line, which is quadratic during long extractions.
+        if (_logBuilder.Length > 0) _logBuilder.Append('\n');
+        _logBuilder.Append(text);
+        LogOutput = _logBuilder.ToString();
     }
 }
