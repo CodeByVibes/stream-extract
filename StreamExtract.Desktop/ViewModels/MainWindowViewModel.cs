@@ -262,6 +262,36 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(CanExtract));
     }
 
+    /// <summary>
+    /// Detaches entries from the file list. Only the in-memory session is touched:
+    /// nothing is deleted, moved or modified on disk. Only top-level entries (the
+    /// imported media files) can be removed; stream/detail children are ignored.
+    /// </summary>
+    public void RemoveFileNodes(IEnumerable<FileNodeViewModel> nodes)
+    {
+        var removed = 0;
+
+        foreach (var node in nodes.Distinct().ToList())
+        {
+            if (node.Tag is not ImportedFile imported) continue;
+            if (!FileNodes.Remove(node)) continue;
+
+            _importedFiles.Remove(imported);
+            removed++;
+        }
+
+        if (removed == 0)
+        {
+            StatusText = "Only media files (top-level entries) can be removed from the list.";
+            return;
+        }
+
+        AppendLog($"Removed {removed} file{(removed == 1 ? "" : "s")} from the list. Files on disk were not touched.");
+        StatusText = FileNodes.Count > 0
+            ? $"Imported {FileNodes.Count} file{(FileNodes.Count == 1 ? "" : "s")}"
+            : "Ready";
+    }
+
     private static FileNodeViewModel CreateFileNode(ImportedFile imported)
     {
         var info = imported.Info;

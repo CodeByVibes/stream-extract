@@ -87,7 +87,7 @@
                   Padding="8,6"
                   BorderBrush="{DynamicResource SystemControlHighlightListLowBrush}"
                   BorderThickness="0,0,0,1">
-            <TextBlock Text="Files and Streams (Drag and drop supported)"
+            <TextBlock Text="Files and Streams (Drag and drop supported · Delete removes from list)"
                        FontWeight="SemiBold"
                        FontSize="12" />
           </Border>

@@ -20,6 +20,44 @@ public partial class MainWindow : Window
 
         AddHandler(DragDrop.DragOverEvent, DragOver, handledEventsToo: true);
         AddHandler(DragDrop.DropEvent, Drop, handledEventsToo: true);
+
+        FilesTreeView.KeyDown += OnFilesTreeKeyDown;
+    }
+
+    private void OnFilesTreeKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Delete || DataContext is not MainWindowViewModel vm)
+            return;
+
+        var nodes = GetSelectedFileNodes();
+        if (nodes.Count == 0)
+            return;
+
+        vm.RemoveFileNodes(nodes);
+        e.Handled = true;
+    }
+
+    /// <summary>
+    /// Collects the selected tree entries. Multi-selection is honoured when it is
+    /// enabled, with a fallback to the single selected item.
+    /// </summary>
+    private IReadOnlyList<FileNodeViewModel> GetSelectedFileNodes()
+    {
+        var nodes = new List<FileNodeViewModel>();
+
+        if (FilesTreeView.SelectedItems is { } items)
+        {
+            foreach (var item in items)
+            {
+                if (item is FileNodeViewModel node && !nodes.Contains(node))
+                    nodes.Add(node);
+            }
+        }
+
+        if (nodes.Count == 0 && FilesTreeView.SelectedItem is FileNodeViewModel single)
+            nodes.Add(single);
+
+        return nodes;
     }
 
     private void DragOver(object? sender, DragEventArgs e)
