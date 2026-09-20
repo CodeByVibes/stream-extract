@@ -118,6 +118,7 @@ fi
 fixture_count=0
 has_mkv=false
 has_mp4=false
+has_rich=false
 for fixture in "${fixtures[@]}"; do
     fixture="$(realpath "$fixture")"
     [[ -f "$fixture" ]] || { echo "Missing smoke fixture: $fixture" >&2; exit 1; }
@@ -138,9 +139,26 @@ for fixture in "${fixtures[@]}"; do
         echo "Extraction produced no non-empty output for $fixture" >&2
         exit 1
     }
+    if [[ "$(basename "$fixture")" == "sample-rich.mkv" ]]; then
+        # Attachment, chapter, and tag extraction: these modes need a fixture
+        # that actually carries an attachment and chapters.
+        has_rich=true
+        rich_output="$TEST_DIR/rich-$fixture_count"
+        mkdir "$rich_output"
+        "$ROOT/streamextract" extract "$fixture" \
+            --attachments --chapters --tags --output "$rich_output"
+        for mode in chapters tags attachment; do
+            find "$rich_output" -type f -name "*$mode*" -size +0c -print -quit |
+                grep -q . || {
+                echo "No non-empty $mode output for $fixture" >&2
+                exit 1
+            }
+        done
+    fi
 done
 [[ "$has_mkv" == true ]] || { echo "Smoke test requires at least one MKV fixture" >&2; exit 1; }
 [[ "$has_mp4" == true ]] || { echo "Smoke test requires at least one MP4 fixture" >&2; exit 1; }
+[[ "$has_rich" == true ]] || echo "Note: sample-rich.mkv not supplied; attachment and chapter modes not exercised" >&2
 APPIMAGE_DIR="$TEST_DIR/appimage"
 mkdir "$APPIMAGE_DIR"
 (
