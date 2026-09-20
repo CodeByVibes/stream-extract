@@ -86,20 +86,21 @@ cd streamextract
 
 The Linux release archive is self-contained for the supported `linux-x64`
 environment. It includes the CLI, verified `mkvmerge`, `mkvextract`, and
-`MP4Box` Linux binaries, and the MKVToolNix runtime libraries those binaries
-need. You do not need to install `.NET` or the native tools separately; the host
+`MP4Box` Linux binaries, and the MKVToolNix library closure those two tools
+load. You do not need to install `.NET` or the native tools separately; the host
 still supplies the Linux kernel and dynamic loader.
 The release packaging process securely downloads pinned native tool versions, verifies their SHA-256 checksums, and bundles them.
 
 Packaging builds a fully static `MP4Box` from the pinned GPAC source release, so
 the bundled binary has no dynamic library dependencies of its own. Only the
-MKVToolNix runtime libraries are bundled (`tools/mkvtoolnix-runtime/`); there is
-no `tools/lib/` directory. The archive still depends on the host Linux kernel and
-dynamic loader; portability is limited by the loader and kernel ABI supported by
-the build environment.
+MKVToolNix CLI library closure is bundled (`tools/mkvtoolnix-runtime/`); the
+MKVToolNix GUI and its Qt plugins are not. There is no `tools/lib/` directory.
+The archive still depends on the host Linux kernel and dynamic loader;
+portability is limited by the loader and kernel ABI supported by the build
+environment.
 
 `tools-manifest.json` records and validates every bundled file — including each
-MKVToolNix runtime file — before the CLI or desktop app processes media.
+MKVToolNix runtime closure file — before the CLI or desktop app processes media.
 
 The Linux archive includes the self-contained Avalonia desktop app under
 `desktop/`. Launch `desktop/StreamExtract.Desktop`; its `tools/` directory is

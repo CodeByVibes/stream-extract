@@ -79,7 +79,7 @@ streamextract/
     mkvmerge
     mkvextract
     MP4Box
-    mkvtoolnix-runtime/   # dereferenced MKVToolNix runtime files
+    mkvtoolnix-runtime/   # mkvmerge, mkvextract, and their resolved library closure
   licenses/
     GPAC-LICENSE.txt
     MKVToolNix-LICENCE.txt
